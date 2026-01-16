@@ -190,18 +190,7 @@ class TavilySearchTool(BaseTool):
     args_schema: Type[BaseModel] = TavilySearchInput
     search: TavilySearch = Field(default_factory=TavilySearch)
 
-    def _run(
-        self,
-        query: str,
-        search_depth: str = "basic", # basic|advanced
-        include_domains: str = [
-            "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
-            "https://www.brompton.com/stories/design-and-engineering", 
-            "https://dahon.com/technology"
-        ],
-        include_images: bool = False,
-        include_image_descriptions: bool = False,
-        ) -> str:
+    def _run(self, query: str, search_depth: str, include_domains: str, include_images: bool, include_image_descriptions: bool) -> str:
         return self.search.run(query)
 
 class WikipediaTool(BaseTool):
@@ -231,7 +220,15 @@ class YouTubeSearchTool(BaseTool):
         return self.search.run(query)
 
 generation = GenerationTool()
-web_search = TavilySearchTool()
+
+web_search = TavilySearchTool(
+    search_depth="basic",
+    include_domains = [
+        "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
+        "https://www.brompton.com/stories/design-and-engineering",
+        "https://dahon.com/technology"
+    ])
+
 wiki = WikipediaTool()
 dalle = DallEImageTool()
 youtube = YouTubeSearchTool()
@@ -308,10 +305,10 @@ crew_manager = Agent(
 
 customer_support = Agent(
     role='Customer Support',
-    goal='Retrieve accurate information from the vector store to answer the question.',
+    goal='Retrieve accurate information to answer the question.',
     backstory=(
         """You have spent a decade in customer support for major consumer product companies.
-        You are meticulous, and have a talent for understanding product datasheets and fetching information from a knowledge base."""
+        You are meticulous, and have a talent for understanding product datasheets and fetching information from knowledge base."""
     ),
     allow_delegation=False,
     verbose=True,
@@ -352,7 +349,8 @@ manage_task = Task(
 )
 '''
 support_task = Task(
-    description='Find the answer to {question} in the vector store.',
+    #description='Find the answer to {question} in the vector store.',
+    description='Find the answer to {question}.',
     expected_output='A JSON report summarizing {question} and the answer retrieved.',
     tools=[rag_tool, web_search],
     human_input=True, # The agent can prompt the user for input
