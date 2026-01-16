@@ -118,7 +118,8 @@ for doc in web_docs:
 # chunk_overlap ~10% of chunk_size
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
 
-all_docs = web_docs + txt_docs + pdf_docs
+#all_docs = web_docs + txt_docs + pdf_docs
+all_docs = txt_docs + pdf_docs
 
 split_docs = text_splitter.split_documents(all_docs)
 
@@ -184,9 +185,9 @@ class TavilySearchInput(BaseModel):
     include_image_descriptions: bool = Field(default=False, description="Whether to include image descriptions in the search results.")
 
 class TavilySearchTool(BaseTool):
-    name: str = "tavily"
+    name: str = "tavily_search"
     description: str = "A tool for searching the internet using Tavily to get real-time information."
-    args_schema: Type[BaseModel] = TavilySearchInput # Link the schema to the tool
+    args_schema: Type[BaseModel] = TavilySearchInput
     search: TavilySearch = Field(default_factory=TavilySearch)
 
     def _run(
@@ -194,10 +195,9 @@ class TavilySearchTool(BaseTool):
         query: str,
         search_depth: str = "basic", # basic|advanced
         include_domains: str = [
+            "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
             "https://www.brompton.com/stories/design-and-engineering", 
-            "https://dahon.com/technology",
-            "https://ekolife.asia/",
-            "https://www.consumerreports.org/health/bikes/best-folding-bikes-a2576871382/"
+            "https://dahon.com/technology"
         ],
         include_images: bool = False,
         include_image_descriptions: bool = False,
@@ -230,11 +230,11 @@ class YouTubeSearchTool(BaseTool):
     def _run(self, query: str) -> str:
         return self.search.run(query)
 
+generation = GenerationTool()
 web_search = TavilySearchTool()
 wiki = WikipediaTool()
 dalle = DallEImageTool()
 youtube = YouTubeSearchTool()
-generation = GenerationTool()
 file_writer = FileWriterTool()
 
 # Define tool for human-in-the-loop interaction
@@ -253,6 +253,7 @@ class HumanInTheLoopTool(BaseTool):
     
 human_in_the_loop = HumanInTheLoopTool()
 
+'''
 # ConversationChain setup for memory management
 from langchain.agents import Tool
 from langchain.chains import ConversationChain
@@ -266,7 +267,6 @@ prompt = PromptTemplate(
              "Current conversation:\n{chat_history}\nHuman: {input}\nAI:"
 )
 
-'''
 # Initialize the ConversationBufferMemory
 # The memory_key should match the history variable in the prompt
 memory = ConversationBufferMemory(memory_key="chat_history")
@@ -290,14 +290,14 @@ class ChatSummaryTool(BaseTool):
 chat_summary_tool = ChatSummaryTool()
 '''
 
-# Create the agents with the defined tools
+# Define the agents
 # Enable coordination by setting allow_delegation=True for the manager agent
 # Manager agent is not allowed to have tools.
 crew_manager = Agent(
     role='Crew Manager',
     goal='Efficiently manage the crew and ensure high-quality task completion',
     backstory=(
-        """With 10+ years of experience leading a team, you are an expert at interpreting user questions and delegating tasks to coworkers.
+        """With years of experience leading a team, you are an expert at interpreting user questions and delegating tasks to coworkers.
         You're methodical in your approach to coordinating the workflow and reviewing results from coworkers.
         """
     ),
@@ -313,7 +313,6 @@ customer_support = Agent(
         """You have spent a decade in customer support for major consumer product companies.
         You are meticulous, and have a talent for understanding product datasheets and fetching information from a knowledge base."""
     ),
-    tools=[rag_tool, web_search],
     allow_delegation=False,
     verbose=True,
     llm=llm,
@@ -321,9 +320,9 @@ customer_support = Agent(
 
 researcher = Agent(
     role='Market Researcher',
-    goal='Find information about the latest product trends and launches for the Asian market.',
+    goal='Find information about the latest product trends and launches for the Singapore market.',
     backstory=(
-        """You have spent 15 years conducting and analyzing user research for top companies in the urban mobility space.
+        """You have years of experience conducting and analyzing user research for top companies in the urban mobility space.
         You have a talent for reading between the lines and identifying patterns that others miss."""
     ),
     allow_delegation=False,
@@ -345,29 +344,28 @@ writer = Agent(
 '''
 manage_task = Task(
     description=(
-        """Analyse the question, {question}, and delegate tasks to coworkers."""
+        """Analyse {question} and delegate tasks to coworkers."""
     ),
     human_input=True, # The agent can prompt the user for input
     expected_output='One word: support, researcher, writer or finished.',
     agent=crew_manager,
 )
 '''
-
 support_task = Task(
-    description='Find the answer to the question, {question}, in the vector store.',
-    expected_output='A JSON report summarizing the {question} and the answer retrieved.',
-    #tools=[rag_tool], # pdf_search, lta_website, dir_search
+    description='Find the answer to {question} in the vector store.',
+    expected_output='A JSON report summarizing {question} and the answer retrieved.',
+    tools=[rag_tool, web_search],
     human_input=True, # The agent can prompt the user for input
-    output_file='cs_report.md',
+    output_file='cs_report.json',
     agent=customer_support
 )
 
 # The primary goal of the research phase is info gathering to build a comprehensive knowledge base about the topic.
 research_task = Task(
     #description='For the product stated in the question, {question}, research the top 3 market trends.',
-    description='Gather information about the folding bike technologies of the two bike makers mentioned in the question, {question}.',
+    description='Gather information about the folding bike technologies of the two bike makers mentioned in the quest {question}.',
     expected_output=(
-        """A preliminary JSON report of raw findings, including URLs to relevant images or videos."""
+        """A preliminary JSON report of raw findings, including URLs of relevant images or videos."""
     ),
     tools=[web_search, wiki, youtube],
     human_input=True, # the agent can prompt the user for input
@@ -379,9 +377,8 @@ research_task = Task(
 # during the research phase to answer the initial research questions
 analysis_task = Task(
     #description='Analyze the identified trends to determine consumer needs, market gaps, and competition.',
-    description='Analyze the data collected from the research phase and compare 3 technologies of the two bike makers mentioned in the question, {question}.',
+    description='Analyze the data collected from the research phase and compare the technologies of the two bike makers mentioned in the question {question}.',
     expected_output=("A final JSON report detailing the insights, conclusions, and recommendations"),
-    tools=[generation, web_search],
     human_input=True, # the agent can prompt the user for input
     output_file='analysis.json',
     agent=researcher
@@ -390,9 +387,9 @@ analysis_task = Task(
 writing_task = Task(
     description='Using the provided research notes, write a market research report with the product development team as the target audience.',
     expected_output=(
-        """A concise Markdown report (around 500 words) that includes URLs to relevant images or videos."""
+        """A Markdown report (around 500-800 words in length) that includes URLs of relevant images or videos."""
     ),
-    tools=[generation, dalle, file_writer],
+    tools=[dalle, file_writer],
     human_input=True, # the agent can prompt the user for input
     output_file='mkt_report.md',
     agent=writer
@@ -408,8 +405,7 @@ cs_crew = Crew(
     #manager_agent=crew_manager,
     planning=False,
     memory=True, # enable conversational memory
-    verbose=True,
-    output_log_file="cs_tool_usage"
+    verbose=True
 )
 
 pd_crew = Crew(
@@ -419,8 +415,7 @@ pd_crew = Crew(
     manager_llm=llm,
     planning=False,
     memory=True, # enable conversational memory
-    verbose=True,
-    output_log_file="pd_tool_usage"
+    verbose=True
 )
 '''
     
@@ -439,30 +434,29 @@ async def on_message(message: cl.Message):
 @cl.on_chat_start
 async def on_chat_start():
     # Store the crew object in the user session
-    cs_crew = Crew(
+    crew = Crew(
         agents=[customer_support],
         tasks=[support_task],
         process=Process.hierarchical,
         #manager_llm=llm,
         manager_agent=crew_manager,
         planning=False,
-        memory=True, # enable conversational memory
-        verbose=True,
-        output_log_file="cs_tool_usage"
+        memory=False, # enable conversational memory
+        verbose=True
     )
     
-    cl.user_session.set("my_crew", cs_crew)
+    cl.user_session.set("my_crew", crew)
     await cl.Message(content="CrewAI system ready. How can I help you?").send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
-    cs_crew = cl.user_session.get("my_crew")
+    crew = cl.user_session.get("my_crew")
 
     # In a conversational loop, you might dynamically create a task or have a standing 'conversation task'
     # The basic execution method takes an input string
     # The agent will handle subsequent human inputs via the HumanInTheLoopTool internally
     try:
-        result = cs_crew.kickoff(inputs={"question": message.content})    
-        await cl.Message(content=f"CrewAI Output: {result}").send()
+        result = crew.kickoff(inputs={"question": message.content})    
+        await cl.Message(content=result).send()
     except Exception as e:
         await cl.Message(content=f"An error occurred: {e}").send()
