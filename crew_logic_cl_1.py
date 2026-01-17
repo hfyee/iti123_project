@@ -122,8 +122,8 @@ def create_directory_loader(file_type, directory_path):
     )
 
 # Create DirectoryLoader instances for each file type
-pdf_loader = create_directory_loader('.pdf', './docs2upload')
-txt_loader = create_directory_loader('.txt', './docs2upload')
+pdf_loader = create_directory_loader('.pdf', './rag_docs')
+txt_loader = create_directory_loader('.txt', './rag_docs')
 
 # Load the documents
 pdf_docs = pdf_loader.load()
