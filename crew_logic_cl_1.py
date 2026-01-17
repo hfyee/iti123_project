@@ -4,13 +4,6 @@ Docstring for agentic_rag_crewai_v2
 # Install dependencies
 #!pip install crewai crewai_tools langchain_community langchain_pinecone langchain_huggingface sentence-transformers langchain-tavily langchain_openai gdown chainlit
 #!pip install wikipedia youtube_search
-'''
-# Download env file or use local copy
-import gdown
-url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?usp=drive_link' # HF
-output_path = '.env'
-gdown.download(url, output_path, quiet=False,fuzzy=True)
-'''
 
 # Load environment variables
 import os
@@ -485,7 +478,7 @@ async def on_chat_start():
     
     cl.user_session.set("my_crew", crew)
     #await cl.Message(content="CrewAI system ready. How can I help you?").send()
-    await cl.Message(content="CrewAI system ready. What is the consumer good industry that you are interested to know?").send()
+    await cl.Message(content="CrewAI system ready. The consumer good category to research:").send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
