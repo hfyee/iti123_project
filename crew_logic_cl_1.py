@@ -446,7 +446,7 @@ cs_crew = Crew(
     manager_llm=llm,
     #manager_agent=crew_manager,
     planning=False,
-    memory=True, # enable conversational memory
+    memory=True,
     verbose=True
 )
 
@@ -456,7 +456,7 @@ pd_crew = Crew(
     process=Process.hierarchical,
     manager_llm=llm,
     planning=False,
-    memory=True, # enable conversational memory
+    memory=True,
     verbose=True
 )
 '''
@@ -472,7 +472,7 @@ async def on_chat_start():
         manager_llm=llm,
         #manager_agent=crew_manager,
         planning=False,
-        memory=False, # enable conversational memory
+        memory=True,
         verbose=True
     )
     
