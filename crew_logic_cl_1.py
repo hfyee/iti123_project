@@ -62,6 +62,47 @@ llm = ChatOpenAI(
     max_tokens=1000,
 )
 
+'''
+RAG v1: RagTool with ChromaDB as vector store
+
+vectordb: VectorDbConfig = {
+    "provider": "chromadb", # alternative: qdrant
+    "config": {
+        "collection_name": "ebike-docs",
+        "persist_directory": "./ebike-docs_db"
+    }
+}
+
+# default embedding model is openai/text-embedding-3-large
+embedding_model: ProviderSpec = {
+    "provider": "openai",
+    "config": {
+        "model_name": "text-embedding-3-small"
+    }
+}
+
+config: RagToolConfig = {
+    "vectordb": vectordb,
+    "embedding_model": embedding_model,
+    "top_k": 4 # default is 4
+}
+
+rag_tool = RagTool(
+    name="Documentation Tool",
+    description="Use this tool to answer questions about the knowledge base.",
+    config=config,
+    summarize=True
+)
+
+# Add content from PDF
+rag_tool.add(data_type="pdf_file", path="https://onemotoring.lta.gov.sg/content/dam/onemotoring/Buying/PDF/PAB/List_of_Approved_PAB_Models.pdf")
+# Add content from web page
+rag_tool.add(data_type="website", url="https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html")
+#rag_tool.add(data_type="website", url="https://www.brompton.com/s/article/Brompton-Electric?srsltid=AfmBOooBKHcdqMHiOMzPKVP8Ysq18mNqRzelXHcoamEoedO8KVF2dteC")
+'''
+
+# RAG v3: Pinecone vector store with reranking
+
 # Start of RAG pipeline
 
 # RAG document loaders
@@ -118,8 +159,8 @@ for doc in web_docs:
 # chunk_overlap ~10% of chunk_size
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
 
-#all_docs = web_docs + txt_docs + pdf_docs
-all_docs = txt_docs + pdf_docs
+all_docs = web_docs + txt_docs + pdf_docs
+#all_docs = txt_docs + pdf_docs
 
 split_docs = text_splitter.split_documents(all_docs)
 
@@ -223,6 +264,8 @@ generation = GenerationTool()
 
 web_search = TavilySearchTool(
     search_depth="basic",
+    include_images = True,
+    include_image_descriptions = True,
     include_domains = [
         "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
         "https://www.brompton.com/stories/design-and-engineering",
@@ -298,8 +341,9 @@ crew_manager = Agent(
         You're methodical in your approach to coordinating the workflow and reviewing results from coworkers.
         """
     ),
-    verbose=True,
     allow_delegation=True,
+    verbose=True,
+    max_iter=5, # prevent infinite loops, default is 25
     llm=llm,
 )
 
@@ -312,6 +356,7 @@ customer_support = Agent(
     ),
     allow_delegation=False,
     verbose=True,
+    max_iter=5, # prevent infinite loops, default is 25
     llm=llm,
 )
 
@@ -324,6 +369,7 @@ researcher = Agent(
     ),
     allow_delegation=False,
     verbose=True,
+    max_iter=5, # prevent infinite loops, default is 25
     llm=llm,
 )
 
@@ -333,6 +379,7 @@ writer = Agent(
     backstory="As a seasoned copywriter with a deep understanding of technical products, you can transform complex research into easy-to-read articles, mimicking a specific brand voice.",
     allow_delegation=False,
     verbose=True,
+    max_iter=5, # prevent infinite loops, default is 25
     llm=llm,
 )
 
@@ -352,7 +399,7 @@ support_task = Task(
     #description='Find the answer to {question} in the vector store.',
     description='Find the answer to {question}.',
     expected_output='A JSON report summarizing {question} and the answer retrieved.',
-    tools=[rag_tool, web_search],
+    tools=[rag_tool],
     human_input=True, # The agent can prompt the user for input
     output_file='cs_report.json',
     agent=customer_support
@@ -363,7 +410,7 @@ research_task = Task(
     #description='For the product stated in the question, {question}, research the top 3 market trends.',
     description='Gather information about the folding bike technologies of the two bike makers mentioned in the quest {question}.',
     expected_output=(
-        """A preliminary JSON report of raw findings, including URLs of relevant images or videos."""
+        """A preliminary JSON report of raw findings, including relevant image or video URLs."""
     ),
     tools=[web_search, wiki, youtube],
     human_input=True, # the agent can prompt the user for input
@@ -385,7 +432,7 @@ analysis_task = Task(
 writing_task = Task(
     description='Using the provided research notes, write a market research report with the product development team as the target audience.',
     expected_output=(
-        """A Markdown report (around 500-800 words in length) that includes URLs of relevant images or videos."""
+        """A Markdown report (around 500-800 words in length) that includes relevant image or video URLs."""
     ),
     tools=[dalle, file_writer],
     human_input=True, # the agent can prompt the user for input
@@ -416,7 +463,7 @@ pd_crew = Crew(
     verbose=True
 )
 '''
-    
+
 # Run and test the crews within Chainlit
 '''
 @cl.on_chat_start
