@@ -98,13 +98,11 @@ rag_tool = RagTool(
 rag_tool.add(data_type="pdf_file", path="https://onemotoring.lta.gov.sg/content/dam/onemotoring/Buying/PDF/PAB/List_of_Approved_PAB_Models.pdf")
 # Add content from web page
 rag_tool.add(data_type="website", url="https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html")
-#rag_tool.add(data_type="website", url="https://www.brompton.com/s/article/Brompton-Electric?srsltid=AfmBOooBKHcdqMHiOMzPKVP8Ysq18mNqRzelXHcoamEoedO8KVF2dteC")
 '''
 
 # RAG v3: Pinecone vector store with reranking
 
 # Start of RAG pipeline
-
 # RAG document loaders
 # Define a dictionary to map file extensions to their respective loaders
 file_loaders = {
@@ -141,7 +139,8 @@ for doc in txt_docs:
 
 # Website loader
 urls = [
-    "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html"
+    "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
+    "https://www.consumerreports.org/health/bikes/best-folding-bikes-a2576871382/"
 ]
 
 web_loader = WebBaseLoader(urls)
@@ -347,13 +346,13 @@ crew_manager = Agent(
     llm=llm,
 )
 
-customer_support = Agent(
+knowledge_expert = Agent(
     role='Customer Support',
-    goal='Retrieve accurate information to answer the question.',
+    goal='Uses RAG tool to answer questions about the knowledge base.',
     backstory=(
-        """You have spent a decade in customer support for major consumer product companies.
-        You are meticulous, and have a talent for understanding product datasheets and fetching information from knowledge base."""
+        """You have a talent for fetching information from knowledge base."""
     ),
+    tools=[rag_tool],
     allow_delegation=False,
     verbose=True,
     max_iter=5, # prevent infinite loops, default is 25
@@ -362,10 +361,11 @@ customer_support = Agent(
 
 researcher = Agent(
     role='Market Researcher',
-    goal='Find information about the latest product trends and launches for the Singapore market.',
+    goal='Conduct market research about the assigned consumer product that provides valuable insights to the reader.',
     backstory=(
-        """You have years of experience conducting and analyzing user research for top companies in the urban mobility space.
-        You have a talent for reading between the lines and identifying patterns that others miss."""
+        """You have years of experience conducting market research for leading consumer goods companies.
+        You have a gift for analysis, reading between the lines and identifying patterns that others miss.
+        You excel at explaining complex concepts in accessible language."""
     ),
     allow_delegation=False,
     verbose=True,
@@ -373,10 +373,14 @@ researcher = Agent(
     llm=llm,
 )
 
-writer = Agent(
-    role="Technical Writer",
-    goal='Create compelling content based on research that uses product features as your sales tool.',
-    backstory="As a seasoned copywriter with a deep understanding of technical products, you can transform complex research into easy-to-read articles, mimicking a specific brand voice.",
+content_reviewer = Agent(
+    role="Content Reviewer and Editor",
+    goal='Ensure content is accurate, comprehensive, well-structured, and insightful with clear takeaways.',
+    backstory=(    
+        """You are a meticulous editor with years of experience reviewing market reports from consultants. 
+        You have an eye for clarity and coherence. You excel at improving content, while maintaining the original author's voice 
+        and ensuring consistent quality across multiple sections in the report."""
+    ),
     allow_delegation=False,
     verbose=True,
     max_iter=5, # prevent infinite loops, default is 25
@@ -395,49 +399,49 @@ manage_task = Task(
     agent=crew_manager,
 )
 '''
-support_task = Task(
-    #description='Find the answer to {question} in the vector store.',
-    description='Find the answer to {question}.',
-    expected_output='A JSON report summarizing {question} and the answer retrieved.',
-    tools=[rag_tool],
-    human_input=True, # The agent can prompt the user for input
-    output_file='cs_report.json',
-    agent=customer_support
-)
-
-# The primary goal of the research phase is info gathering to build a comprehensive knowledge base about the topic.
 research_task = Task(
-    #description='For the product stated in the question, {question}, research the top 3 market trends.',
-    description='Gather information about the folding bike technologies of the two bike makers mentioned in the quest {question}.',
+    description=(
+        """ Create a market report on the consumer good market mentioned in {question} for Singapore market.
+
+            Target audience: product strategy team
+
+            The report should include: 
+            1. Key trends
+            2. The top 2 players in this space, their positioning, reach, and ratings
+            3. Potential market gaps and any emerging players
+            4. Relevant product image or video URLs
+            5. Be approximately 500-800 words in length
+        """),
     expected_output=(
-        """A preliminary JSON report of raw findings, including relevant image or video URLs."""
+        'A well-structured, comprehensive report in Markdown format that is informative and appropriate for the target audience.'
     ),
-    tools=[web_search, wiki, youtube],
-    human_input=True, # the agent can prompt the user for input
-    output_file='research.json',
+    tools=[web_search, wiki, youtube, file_writer],
+    human_input=False, # the agent can prompt the user for input
+    output_file='./output/research.md',
     agent=researcher
 )
 
-# The primary goal of the analysis phase is interpretation and synthesis of the data collected
-# during the research phase to answer the initial research questions
-analysis_task = Task(
-    #description='Analyze the identified trends to determine consumer needs, market gaps, and competition.',
-    description='Analyze the data collected from the research phase and compare the technologies of the two bike makers mentioned in the question {question}.',
-    expected_output=("A final JSON report detailing the insights, conclusions, and recommendations"),
-    human_input=True, # the agent can prompt the user for input
-    output_file='analysis.json',
-    agent=researcher
-)
+review_task = Task(
+    description=(
+        """Review and improve the market report from the Researcher.
 
-writing_task = Task(
-    description='Using the provided research notes, write a market research report with the product development team as the target audience.',
+        Target audience: product strategy team
+
+        Your review should:
+        1. Fix any grammatical or spelling errors
+        2. Improve clarity and readability
+        3. Ensure content is comprehensive and accurate
+        4. Enhance the structure and flow
+  
+        Provide the improved version of the report in Markdown format.
+        """),
     expected_output=(
-        """A Markdown report (around 500-800 words in length) that includes relevant image or video URLs."""
+        'An improved, polished version of the report that maintains the original structure but enhances clarity, accuracy and consistency.'
     ),
-    tools=[dalle, file_writer],
+    tools=[file_writer],
     human_input=True, # the agent can prompt the user for input
-    output_file='mkt_report.md',
-    agent=writer
+    output_file='./output/reviewed.md',
+    agent=content_reviewer
 )
 
 '''
@@ -464,34 +468,24 @@ pd_crew = Crew(
 )
 '''
 
-# Run and test the crews within Chainlit
-'''
-@cl.on_chat_start
-async def on_chat_start():
-    await cl.Message(content="👋 Hi! I'm your project assistant. How can I help you?").send()
-
-@cl.on_message
-async def on_message(message: cl.Message):
-    result = await asyncio.to_thread(lambda: cs_crew.kickoff({'question': message.content}))
-    await cl.Message(content=result).send()
-'''
-
+# Run the crews within Chainlit
 @cl.on_chat_start
 async def on_chat_start():
     # Store the crew object in the user session
     crew = Crew(
-        agents=[customer_support],
-        tasks=[support_task],
+        agents=[knowledge_expert, researcher, content_reviewer],
+        tasks=[research_task, review_task],
         process=Process.hierarchical,
-        #manager_llm=llm,
-        manager_agent=crew_manager,
+        manager_llm=llm,
+        #manager_agent=crew_manager,
         planning=False,
         memory=False, # enable conversational memory
         verbose=True
     )
     
     cl.user_session.set("my_crew", crew)
-    await cl.Message(content="CrewAI system ready. How can I help you?").send()
+    #await cl.Message(content="CrewAI system ready. How can I help you?").send()
+    await cl.Message(content="CrewAI system ready. What is the consumer good industry that you are interested to know?").send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -501,7 +495,8 @@ async def on_message(message: cl.Message):
     # The basic execution method takes an input string
     # The agent will handle subsequent human inputs via the HumanInTheLoopTool internally
     try:
-        result = crew.kickoff(inputs={"question": message.content})    
+        #result = crew.kickoff(inputs={"question": message.content})
+        result = await asyncio.to_thread(lambda: crew.kickoff({'question': message.content}))  
         await cl.Message(content=result).send()
     except Exception as e:
         await cl.Message(content=f"An error occurred: {e}").send()
