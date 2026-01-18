@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY')
 os.environ['PINECONE_API_KEY'] = os.getenv('PINECONE_API_KEY')
-os.environ["USER_AGENT"] = "iti123_project/1.0 (9108122D@myaccount.nyp.edu.sg)"
+os.environ["USER_AGENT"] = "iti123_project/1.0 (xxxx122D@myaccount.nyp.edu.sg)"
 
 # Import crewai packages
 from crewai import Agent, Task, Crew, Process
