@@ -4,13 +4,6 @@ Docstring for agentic_rag_crewai_v2
 # Install dependencies
 #!pip install crewai crewai_tools langchain_community langchain_pinecone langchain_huggingface sentence-transformers langchain-tavily langchain_openai gdown chainlit
 #!pip install wikipedia youtube_search
-'''
-# Download env file or use local copy
-import gdown
-url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?usp=drive_link' # HF
-output_path = '.env'
-gdown.download(url, output_path, quiet=False,fuzzy=True)
-'''
 
 # Load environment variables
 import os
