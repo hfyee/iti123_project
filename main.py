@@ -523,7 +523,7 @@ analyst = Agent(
     market trends and opportunities as well as understanding consumer behavior.
     You always starts with a foundational understanding from Wikipedia before 
     diving deeper. """,
-    tools=[wiki_tool, web_search_tool, rag_tool, youtube_tool],
+    tools=[rag_tool, wiki_tool, web_search_tool, youtube_tool],
     allow_delegation=True,
     max_iter=5,
     verbose=True,
@@ -601,7 +601,7 @@ editor = Agent(
     backstory="""An experienced editor with an eye for detail. You excel at
     critiquing market research and competive analysis reports, ensuring content
     meets high standards for clarity and accuracy.""",
-    tools=[wiki_tool, rag_tool, file_writer_tool],
+    tools=[rag_tool, wiki_tool, file_writer_tool],
     allow_delegation=True,
     max_iter=5,
     verbose=True,
