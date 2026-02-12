@@ -1,2 +1,4 @@
-# iti123_project
-Agentic app for NYP SD AAI / ITI123 project
+## Agentic Market Research Assistant
+
+CrewAI flow version V0  
+See demo at ...
