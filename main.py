@@ -97,7 +97,7 @@ qa_llm = ChatOpenAI(
     #max_completion_tokens=1000
 )
 
-vision_llm = LLM(
+vlm = LLM(
     model="gemini/gemini-2.5-flash-lite",
     api_key=gemini_api_key,
     temperature=0.2
@@ -643,7 +643,7 @@ image_analyst = Agent(
     allow_delegation=False,
     max_iter=10,
     verbose=True,
-    llm=vision_llm,
+    llm=vlm,
 )
 
 # Create a task for both image analysis and generation
