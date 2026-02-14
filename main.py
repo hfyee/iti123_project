@@ -98,10 +98,14 @@ qa_llm = ChatOpenAI(
 )
 
 vlm = LLM(
+    #model="gpt-4o",
+    #api_key=openai_api_key,
     model="gemini/gemini-2.5-flash-lite",
     api_key=gemini_api_key,
     temperature=0.2
 )
+
+# --- RAG setup ---
 
 # RagTool with ChromaDB as vector store
 # default vector db is ChromaDB
@@ -369,17 +373,14 @@ def download_image(image_url, save_path="./generated_image.png"):
 # Define Pydantic model for structured task output
 
 class CompetitiveStrength(str, Enum):
-    VERY_WEAK = "very_weak"
     WEAK = "weak"
     MODERATE = "moderate"
     STRONG = "strong"
-    VERY_STRONG = "very_strong"
 
 class PricingTier(str, Enum):
     BUDGET = "budget"
     MID_RANGE = "mid_range"
     PREMIUM = "premium"
-    LUXURY = "luxury"
 
 class MarketPosition(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -632,32 +633,50 @@ editing_task = Task(
 # -----------------------------
 # Multimodal agent for image analysis and generation
 # ----------------------------
-# Combine image_analyst and image_artist as one agent
 image_analyst = Agent(
     role='Visual Data Specialist',
-    goal='Analyze image and provide detailed description or make precise edits.',
+    goal='Analyze product image and create variant',
     backstory="""An expert in computer vision, capable of interpreting complex
-    visual data. You excel at creating descriptive prompts for DALL-E 3.""",
+    visual data. You are also an experienced industrial designer with expertise 
+    in sketching, 3D modeling (CAD), and prototyping of modern bicycles. 
+    You have a gift for creating detailed prompts for DALL-E 3.""",
     multimodal=True,
-    tools=[encode_image_base64, dalle_tool],
+    #tools=[encode_image_base64, dalle_tool],
+    tools=[dalle_tool],
     allow_delegation=False,
     max_iter=10,
-    verbose=True,
     llm=vlm,
+    verbose=True
 )
 
-# Create a task for both image analysis and generation
-generate_image_task = Task(
-    description="""Use the 'Base64EncodingTool' to encode the product image at
-    {image_url} to a base64 string that you can view. Analyze the image.
-
-    Then use the 'DallEImageTool' to create a photorealistic image
-    of a product variant based on the following criteria:
-
-    Only change the color of the product **frame** to {new_color}, maintaining
-    all other aspects exactly as they are in the original image.
+describe_image_task = Task(
+    description="""
+    1. Locate the product image file at {image_url}.
+    2. Open the image using an image viewer or analysis tool that allows for 
+    close examination of details. 
+    3. Examine the bike's design features such as frame shape, color, and materials used. 
+    4. Identify and analyze functional aspects such as the folding mechanism, wheel size, and saddle design. 
+    5. Take note of additional components like brakes, gears, and any accessories included in the image. 
+    6. Document your observations, focusing on dimensions, weight specifications (if visible), 
+    and overall ergonomics. 
+    7. Synthesize the collected information into a detailed written description, 
+    capturing both technical details and asthetic appeal to ensure a thorough 
+    understanding of the product's features.
     """,
-    expected_output="""An image URL of a product variant with the frame in {new_color}.""",
+    expected_output="""An accurate and detailed description of the product in the original image.""",
+    output_file='output_files/image_analysis.json',
+    agent=image_analyst,
+)
+
+generate_variant_task = Task(
+    description="""                                                                 │
+│   In DallEImageTool, construct a prompt for the photorealistic image generation.
+    of a product variant. Only change the color of the bike frame to {new_color}, 
+    maintaining all other aspects exactly as they are in the original image. 
+    You must not add any additional accessories.
+    """,
+    expected_output="""An image URL of a product variant. The variant should have the bike frame 
+    in {new_color}, with all other aspects exactly as they are in the original image.""",
     agent=image_analyst,
     result_as_answer=True
 )
@@ -834,7 +853,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     @listen("market_research")
     async def analyze_market(self) -> Dict[str, Any]:
         """Conduct market research on product"""
-        print(f"Starting market research for {self.state.product}")
+        st.write(f"Starting market research for {self.state.product}")
 
         research_crew = Crew(
             agents=[reddit_researcher, analyst, writer, editor],
@@ -863,15 +882,15 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     @listen("variant_generation")
     async def generate_variant(self) -> None:
         """Analyze existing product image and generate a variant"""
-        print(f"Starting variant generation for {self.state.image_url}")
+        st.write(f"Starting variant generation for {self.state.image_url}")
 
         image_crew = Crew(
             agents=[image_analyst],
-            tasks=[generate_image_task],
+            tasks=[describe_image_task, generate_variant_task],
             process=Process.sequential,
             planning=True,
             memory=True, # enable memory to keep context
-            verbose=False, # True will output image base64 encoded string in the log
+            verbose=True,
             output_log_file="output_files/image_crew_log"
         )
 
@@ -885,12 +904,15 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         st.markdown("### ✨ Results:")
         save_path=f"output_files/generated_variant_{self.state.new_color}.jpg"
         download_image(result, save_path=save_path)
-        st.image(save_path, caption=f'Product variant in {self.state.new_color}', width=400)
+        if os.path.exists(save_path):
+            st.image(save_path, caption=f'Product variant in {self.state.new_color}', width=400)
+        else:
+            st.warning("Failed to generate image variant.")
 
     @listen("video_transcription")
     async def analyze_video(self) -> None:
         """Summarize YouTube video"""
-        print(f"Starting summary of YouTube video at {self.state.video_url}")
+        st.write(f"Starting summary of YouTube video at {self.state.video_url}")
 
         video_crew = Crew(
             agents=[video_researcher],
@@ -911,7 +933,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     @listen("specs_data_collection")
     async def collect_specs(self) -> None:
         """Search for competitor product specs"""
-        print(f"Starting search for competitor product specifications")
+        st.write(f"Starting search for competitor product specifications")
 
         shopping_crew = Crew(
             agents=[shopping_bot],
@@ -991,7 +1013,7 @@ with st.sidebar:
     st.header("⚙️ User inputs")
     query = st.radio("Select task:", ['Market research', 'Variant generation', 
                             'Video transcription', 'Specs data collection'], index=0)
-    product = st.text_input("Product:", placeholder="e.g., Tern folding bike")
+    product = st.text_input("Product:", placeholder="e.g., Tern folding bike", value="Tern folding bike")
     video_url = st.text_input("Video link for analysis:", value="https://www.youtube.com/watch?v=lhDoB9rGbGQ")
  
     folderPath = os.path.abspath('input_files')
