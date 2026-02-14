@@ -990,8 +990,9 @@ class InputValidator(BaseModel):
 async def run_crew_async(crew: Crew, inputs: dict):
     return crew.kickoff(inputs=inputs)
 
-async def run_flow():
+async def run_flow_async():
     flow = MarketResearchFlow()
+    flow.plot("market_research_flow")
     result = await flow.kickoff_async(inputs=validated_data.dict())
     st.divider()
     st.success("✅ Task Completed!")
@@ -1070,7 +1071,7 @@ if st.button("Run Task"):
                         st.warning("Session terminated: please check your inputs.")
                     else:
                         # Proceed with main agents
-                        asyncio.run(run_flow())
+                        asyncio.run(run_flow_async())
 
             except ValidationError as e:
                 st.warning(f"Validation Error: {e}")
