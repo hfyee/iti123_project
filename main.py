@@ -25,7 +25,7 @@ from langchain_core.tools import tool
 
 # Import crewai packages
 from crewai import Agent, Task, Crew, Process, LLM
-from crewai.flow.flow import Flow, listen, start, router, or_
+from crewai.flow import Flow, listen, or_, start, router, human_feedback, HumanFeedbackResult
 from crewai.tools import BaseTool
 from crewai_tools import RagTool
 from crewai_tools.tools.rag import RagToolConfig, VectorDbConfig, ProviderSpec
@@ -99,7 +99,7 @@ qa_llm = ChatOpenAI(
 )
 
 vlm = LLM(
-    #model="gpt-4o",
+    #model="gpt-4.1",
     #api_key=openai_api_key,
     model="gemini/gemini-2.5-flash-lite",
     api_key=gemini_api_key,
@@ -642,19 +642,23 @@ image_analyst = Agent(
     in sketching, 3D modeling (CAD), and prototyping of modern bicycles. 
     You have a gift for creating detailed prompts for DALL-E 3.""",
     multimodal=True,
-    #tools=[encode_image_base64, dalle_tool],
-    tools=[dalle_tool],
+    tools=[encode_image_base64, dalle_tool],
     allow_delegation=False,
     max_iter=10,
     llm=vlm,
     verbose=True
 )
 
+_ = '''
+    2. Open the image using an image viewer or analysis tool that allows for 
+    close examination of details. 
+    2. Use the 'Base64EncodingTool' to encode the product image to a base64 string that you can view. 
+    Analyze the image. 
+'''
 describe_image_task = Task(
     description="""
     1. Locate the product image file at {image_url}.
-    2. Open the image using an image viewer or analysis tool that allows for 
-    close examination of details. 
+    2. Open the image using an image viewer or analysis tool that allows for close examination of details. 
     3. Examine the bike's design features such as frame shape, color, and materials used. 
     4. Identify and analyze functional aspects such as the folding mechanism, wheel size, and saddle design. 
     5. Take note of additional components like brakes, gears, and any accessories included in the image. 
@@ -901,7 +905,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     async def analyze_market(self) -> Dict[str, Any]:
         """Conduct market research on product"""
         st.divider()
-        st.write(f"Starting market research for {self.state.product}")
+        #st.write(f"Starting market research for {self.state.product}") 
 
         research_crew = Crew(
             agents=[reddit_researcher, analyst, writer, editor],
@@ -915,7 +919,9 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         )
 
         crew_inputs = {"product": self.state.product}
-        result = await research_crew.kickoff_async(inputs=crew_inputs)
+
+        with st.spinner("Performing market research..."):
+            result = await research_crew.kickoff_async(inputs=crew_inputs)
 
         st.markdown("### ✨ Results:")
         if result.pydantic:
@@ -930,7 +936,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     async def analyze_video(self) -> None:
         """Summarize YouTube video"""
         st.divider()        
-        st.write(f"Starting summary of YouTube video at {self.state.video_url}")
+        #st.write(f"Starting summary of YouTube video at {self.state.video_url}")
 
         video_crew = Crew(
             agents=[video_researcher],
@@ -942,7 +948,9 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         crew_inputs = {
             "video_url": self.state.video_url
         }
-        result = await video_crew.kickoff_async(inputs=crew_inputs)
+
+        with st.spinner("Analyzing YouTube video..."):
+            result = await video_crew.kickoff_async(inputs=crew_inputs)
 
         st.markdown("### ✨ Results:")
         st.write(result.raw)
@@ -950,7 +958,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     @listen("variant_generation")
     async def generate_variant(self) -> None:
         """Analyze existing product image and generate a variant"""
-        st.write(f"Starting variant generation for {self.state.image_url}")
+        #st.write(f"Starting variant generation for {self.state.image_url}")
 
         image_crew = Crew(
             agents=[image_analyst],
@@ -966,7 +974,9 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             "image_url": self.state.image_url,
             "new_color": self.state.new_color
         }
-        result = await image_crew.kickoff_async(inputs=crew_inputs)
+
+        with st.spinner("Generating image variant..."):
+            result = await image_crew.kickoff_async(inputs=crew_inputs)
 
         st.divider()
         st.markdown("### ✨ Results:")
@@ -981,7 +991,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     async def collect_specs(self, analysis) -> None:
         """Search for competitor product specs"""
         st.divider()        
-        st.write("Starting search for product specifications from competitors:")
+        #st.write("Starting search for product specifications from competitors:")
 
         _ = '''
         if isinstance(analysis, dict):
@@ -1008,7 +1018,9 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         )
 
         crew_inputs = {"competitors": competitor_names}
-        result = await shopping_crew.kickoff_async(inputs=crew_inputs)
+
+        with st.spinner("Searching for product specifications..."):
+            result = await shopping_crew.kickoff_async(inputs=crew_inputs)
 
         st.markdown("### ✨ Results:")
         st.write("Specs data collection saved to output_files/specs_data.json")
@@ -1018,6 +1030,27 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         """Exit flow if query is off-topic"""
         st.warning(f"Sorry, your question, {self.state.query}, is not not supported.")
         return "Exiting flow"
+
+_ = '''
+    @listen(or_(analyze_market, generate_variant))
+    @human_feedback(
+            message="Please review this draft. Reply 'approved' or 'rejected'.",
+            emit=["approved", "rejected"],
+            llm=llm,
+            default_outcome = "rejected"
+    )
+    def review_content(self):
+        """Get human feedback on the generated content"""
+        return "Awaiting human feedback..."
+
+    @listen("approved")
+    def on_approval(self, result: HumanFeedbackResult):
+        st.write(f"Content approved! Feedback: {result.feedback}")
+
+    @listen("rejected")
+    def on_rejection(self, result: HumanFeedbackResult):
+        st.write(f"Content rejected. Reason: {result.feedback}")
+'''
 
 # Define guard crew outside of flow class
 guard_crew = Crew(
@@ -1067,9 +1100,7 @@ async def run_flow_async():
     flow = MarketResearchFlow()
     flow.plot(filename="market_research_flow.html") # file saved to /tmp/crewai_flow_i*
     result = await flow.kickoff_async(inputs=validated_data.model_dump())
-    st.divider()
-    st.success("✅ Task Completed!")
-    return "Flow completed successully."
+    return result
 
 # --- PAGE CONFIG ---
 icon_img = Image.open("bicycle_icon.png")
@@ -1078,8 +1109,8 @@ col1, col2 = st.columns([1, 10])
 with col1:
     st.image(icon_img, width=50)
 with col2:
-    #st.title("AI-powered Market Research Assistant")
-    st.markdown("<h2 style='margin-top: 0px;'>AI-powered Market Research Assistant</h2>", unsafe_allow_html=True)
+    st.title("AI-powered Market Research Assistant")
+    #st.markdown("<h2 style='margin-top: 0px;'>AI-powered Market Research Assistant</h2>", unsafe_allow_html=True)
 st.markdown("Hi, enter a folding bike product/brand, and let me help you with the market research.")
 
 # --- SIDEBAR: CONFIGURATION ---
@@ -1106,6 +1137,21 @@ with st.sidebar:
         st.rerun()
         clear_output_folder("output_files")
 
+# Validate inputs before passing to crew
+raw_data = {
+    "query": query,
+    "product": product,
+    "video_url": video_url,
+    "image_url": image_url,
+    "new_color": new_color,
+    "topic": "Folding bicycles" # folding bikes, electric bikes
+}
+
+try:
+    validated_data = InputValidator(**raw_data)
+except ValidationError as e:
+    st.warning(f"Validation Error: {e}")
+
 if st.button("Run Task"):
     if not product:
         st.error("Please enter a product name.")
@@ -1113,34 +1159,17 @@ if st.button("Run Task"):
         st.error("Please enter a new color.")
     else:
         clear_output_folder("output_files")
+        # Run guardrail crew first to check if inputs are on-topic and valid
+        with st.spinner("Input guardrails..."):                    
+            #result = guard_crew.kickoff(inputs=validated_data.model_dump())
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
 
-        # Validate inputs before passing to crew
-        raw_data = {
-            "query": query,
-            "product": product,
-            "video_url": video_url,
-            "image_url": image_url,
-            "new_color": new_color,
-            "topic": "Folding bicycles" # folding bikes, electric bikes
-        }
-
-        try:
-            validated_data = InputValidator(**raw_data)
-            # Proceed with crew execution
-            with st.spinner("Analyzing and executing task..."):
-                    
-                # Run guardrail
-                 #result = guard_crew.kickoff(inputs=validated_data.model_dump())
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
-
-                # Check for termination condition
-                if "OFF_TOPIC" in result.raw:
-                    st.warning("Session terminated: please check your inputs.")
-                else:
-                    # Proceed with main agents
-                    asyncio.run(run_flow_async())
-
-        except ValidationError as e:
-            st.warning(f"Validation Error: {e}")
+        # Check for termination condition
+        if "OFF_TOPIC" in result.raw:
+            st.warning("Session terminated: please check your inputs.")
+        else:
+            # Proceed with main agents
+            asyncio.run(run_flow_async())
+            st.success("✅ Flow completed!")
