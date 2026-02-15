@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json
 import asyncio
 # USER_AGENT must be set before any crewai or langchain imports
 os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -24,7 +25,7 @@ from langchain_core.tools import tool
 
 # Import crewai packages
 from crewai import Agent, Task, Crew, Process, LLM
-from crewai.flow.flow import Flow, listen, start, router
+from crewai.flow.flow import Flow, listen, start, router, or_
 from crewai.tools import BaseTool
 from crewai_tools import RagTool
 from crewai_tools.tools.rag import RagToolConfig, VectorDbConfig, ProviderSpec
@@ -364,7 +365,7 @@ def download_image(image_url, save_path="./generated_image.png"):
         if response.status_code == 200:
             with open(save_path, 'wb') as f:
                 f.write(response.content)
-            print(f"Image successfully saved to {save_path}")
+            print(f"Image saved to {save_path}")
         else:
             print(f"Failed to download image. Status code: {response.status_code}")
     except requests.exceptions.RequestException as e:
@@ -602,7 +603,7 @@ editor = Agent(
     backstory="""An experienced editor with an eye for detail. You excel at
     critiquing market research and competive analysis reports, ensuring content
     meets high standards for clarity and accuracy.""",
-    tools=[rag_tool, wiki_tool, file_writer_tool],
+    tools=[rag_tool, wiki_tool, youtube_rag_tool, file_writer_tool],
     allow_delegation=True,
     max_iter=5,
     verbose=True,
@@ -686,10 +687,9 @@ generate_variant_task = Task(
 # -----------------------------
 shopping_bot = Agent(
     role="Shopping Specialist for folding ebikes",
-    goal="Extract specifications and attributes of major ebike models from e-commerce sites.",
-    backstory="""A helpful shopping assistant who is an expert in product
-    search and comparing specifications and prices for consumer goods, specializing
-    in folding bikes.""",
+    goal="Extract specifications and attributes of ebike models from e-commerce sites.",
+    backstory="""A helpful shopping assistant who is an expert in product search and 
+    comparing specifications and prices for consumer goods. You specialize in folding bikes.""",
     tools=[shopping_web_search_tool],
     llm=llm,
     allow_delegation=False,
@@ -697,8 +697,8 @@ shopping_bot = Agent(
     max_iter=10
 )
 
-shopping_task = Task(
-    description="""Search for information on the following electric folding bikes:
+shopping_task_1 = Task(
+    description="""Find technical information on the following electric folding bikes:
     - Tern Vektron, GSD
     - BTWIN E-Fold 500, E-Fold 900
     - Brompton Electric C Line, Electric P Line
@@ -706,6 +706,53 @@ shopping_task = Task(
     - Jimove MC Pro 2.0, MC Pro 3.0
 
     Do a factual extraction of their technical specifications. Include:
+    1. An image of the bike
+    2. Wheel size
+    3. Number of gears
+    4. Weight (in kg)
+    5. Type of brakes
+    6. Folded height (in cm)
+    7. Folded length (in cm)
+    8. E-system
+      (a) Motor
+      (b) Battery
+      (c) Range
+      (d) Charger
+
+    As an example, Tern Vektron specifications can be found at:
+    https://www.ternbicycles.com/en/bikes/474/vektron-p10#tech_specs
+
+    Use the 'TavilySearchTool' and set 'include_domains' to the following URLs.
+    Extract the retail selling price if it is listed on these official websites.
+
+    'include_domains': ["https://ekolife.asia/shop/",
+        "https://www.decathlon.sg/c/cycling/all-bikes/folding-bikes.html",
+        "https://www.decathlon.co.uk/sports/cycling/folding-bikes",
+        "https://www.ternbicycles.com/en/bikes",
+        "https://sg.brompton.com/c/bikes",
+        "https://www.brompton.com/",
+        "https://dahon.com/production?type=E-Bikes"]
+
+    Compile your findings and organize the data in a structured format.
+    If you are not sure, leave the field blank. Do not fabricate any data.
+    """,
+    expected_output="""Specifications of the different folding ebikes in the
+    following JSON format:
+        {'model_name': model_name, 'image': image_url, 'price': price,
+          'specs': {'wheel_size': wheel_size, 'weight': weight, 'gears': gears}
+        }
+    """,
+    agent=shopping_bot,
+    output_file="output_files/specs_data.json"
+)
+
+shopping_task_2 = Task(
+    description="""Find technical information on the electric folding bikes from 
+    each of the competitors {competitors} mentioned in the market research task. 
+    For each competitor, identify their flagship folding ebike model and extract 
+    the technical specifications of these models.
+
+    Include:
     1. An image of the bike
     2. Wheel size
     3. Number of gears
@@ -846,13 +893,14 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             tasks=[routing_task],
         )
 
-        result = router_crew.kickoff(inputs=validated_data.dict())
+        result = router_crew.kickoff(inputs=validated_data.model_dump())
         print("## Router output:", result)
         return result
 
     @listen("market_research")
     async def analyze_market(self) -> Dict[str, Any]:
         """Conduct market research on product"""
+        st.divider()
         st.write(f"Starting market research for {self.state.product}")
 
         research_crew = Crew(
@@ -869,8 +917,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         crew_inputs = {"product": self.state.product}
         result = await research_crew.kickoff_async(inputs=crew_inputs)
 
-        st.divider()
-        st.markdown("### ✨ Results:")        
+        st.markdown("### ✨ Results:")
         if result.pydantic:
             st.write(result.pydantic)
         else:
@@ -878,6 +925,27 @@ class MarketResearchFlow(Flow[MarketResearchState]):
 
         # Return the analysis to update the state
         return {"analysis": result.pydantic}
+    
+    @listen("video_transcription")
+    async def analyze_video(self) -> None:
+        """Summarize YouTube video"""
+        st.divider()        
+        st.write(f"Starting summary of YouTube video at {self.state.video_url}")
+
+        video_crew = Crew(
+            agents=[video_researcher],
+            tasks=[video_research_task],
+            verbose=True,
+            output_log_file="output_files/video_crew_log"
+        )
+
+        crew_inputs = {
+            "video_url": self.state.video_url
+        }
+        result = await video_crew.kickoff_async(inputs=crew_inputs)
+
+        st.markdown("### ✨ Results:")
+        st.write(result.raw)
 
     @listen("variant_generation")
     async def generate_variant(self) -> None:
@@ -909,42 +977,41 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         else:
             st.warning("Failed to generate image variant.")
 
-    @listen("video_transcription")
-    async def analyze_video(self) -> None:
-        """Summarize YouTube video"""
-        st.write(f"Starting summary of YouTube video at {self.state.video_url}")
-
-        video_crew = Crew(
-            agents=[video_researcher],
-            tasks=[video_research_task],
-            verbose=True,
-            output_log_file="output_files/video_crew_log"
-        )
-
-        crew_inputs = {
-            "video_url": self.state.video_url
-        }
-        result = await video_crew.kickoff_async(inputs=crew_inputs)
-
-        st.divider()
-        st.markdown("### ✨ Results:")
-        st.write(result.raw)
-
-    @listen("specs_data_collection")
-    async def collect_specs(self) -> None:
+    @listen(analyze_market)
+    async def collect_specs(self, analysis) -> None:
         """Search for competitor product specs"""
-        st.write(f"Starting search for competitor product specifications")
+        st.divider()        
+        st.write("Starting search for product specifications from competitors:")
+
+        _ = '''
+        if isinstance(analysis, dict):
+            # If we got a dict with 'competitors' key, extract the actual analysis object
+            competitors = analysis.get("competitors")
+        '''
+
+        # Extract competitor names from the market research analysis
+        with open('output_files/research.json', 'r') as f:
+            data = json.load(f)           
+            competitor_names = [competitor['name'] for competitor in data['competitors']]
+        
+        for competitor in competitor_names:
+            st.write(f"- {competitor}")
 
         shopping_crew = Crew(
             agents=[shopping_bot],
-            tasks=[shopping_task],
+            tasks=[shopping_task_2],
+            process=Process.sequential,
+            planning=True,
+            memory=True, # enable memory to keep context
             verbose=True,
             output_log_file="output_files/shopping_crew_log"
         )
 
-        result = await shopping_crew.kickoff_async(inputs=validated_data.dict())
+        crew_inputs = {"competitors": competitor_names}
+        result = await shopping_crew.kickoff_async(inputs=crew_inputs)
 
-        print("\n## Specs data collection completed successfully")
+        st.markdown("### ✨ Results:")
+        st.write("Specs data collection saved to output_files/specs_data.json")
 
     @listen("unsupported")
     def exit_flow(self):
@@ -987,13 +1054,19 @@ class InputValidator(BaseModel):
 
 # --- run functions ---
 
+def clear_output_folder(folderPath="output_files"):
+    if os.path.exists(folderPath):
+        filesList = glob.glob(folderPath + "/*")
+        for file in filesList:
+            os.remove(file)
+
 async def run_crew_async(crew: Crew, inputs: dict):
     return crew.kickoff(inputs=inputs)
 
 async def run_flow_async():
     flow = MarketResearchFlow()
-    flow.plot("market_research_flow")
-    result = await flow.kickoff_async(inputs=validated_data.dict())
+    flow.plot(filename="market_research_flow.html") # file saved to /tmp/crewai_flow_i*
+    result = await flow.kickoff_async(inputs=validated_data.model_dump())
     st.divider()
     st.success("✅ Task Completed!")
     return "Flow completed successully."
@@ -1031,6 +1104,7 @@ with st.sidebar:
     if st.button("Reset Session"):
         st.session_state.clear()
         st.rerun()
+        clear_output_folder("output_files")
 
 if st.button("Run Task"):
     if not product:
@@ -1038,40 +1112,35 @@ if st.button("Run Task"):
     elif not new_color:
         st.error("Please enter a new color.")
     else:
-        # Remove all existing files in output_files folder
-        folderPath = "output_files"
-        if not os.path.exists(folderPath):
-            os.makedirs(folderPath)
-        else:
-            # Get list of all the files in the folder
-            filesList = glob.glob(folderPath + "/*")
-            for file in filesList:
-                os.remove(file)
+        clear_output_folder("output_files")
 
-            # Validate inputs before passing to crew
-            raw_data = {"query": query,
-                        "product": product,
-                        "video_url": video_url,
-                        "image_url": image_url,
-                        "new_color": new_color,
-                        "topic": "Folding bicycles" # folding bikes, electric bikes
-            }
-            try:
-                validated_data = InputValidator(**raw_data)
-                # Proceed with crew execution
-                with st.spinner("Analyzing and executing task..."):
-                    # Run guardrail
-                    #result = guard_crew.kickoff(inputs=validated_data.dict())
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.dict()))
+        # Validate inputs before passing to crew
+        raw_data = {
+            "query": query,
+            "product": product,
+            "video_url": video_url,
+            "image_url": image_url,
+            "new_color": new_color,
+            "topic": "Folding bicycles" # folding bikes, electric bikes
+        }
 
-                    # Check for termination condition
-                    if "OFF_TOPIC" in result.raw:
-                        st.warning("Session terminated: please check your inputs.")
-                    else:
-                        # Proceed with main agents
-                        asyncio.run(run_flow_async())
+        try:
+            validated_data = InputValidator(**raw_data)
+            # Proceed with crew execution
+            with st.spinner("Analyzing and executing task..."):
+                    
+                # Run guardrail
+                 #result = guard_crew.kickoff(inputs=validated_data.model_dump())
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
 
-            except ValidationError as e:
-                st.warning(f"Validation Error: {e}")
+                # Check for termination condition
+                if "OFF_TOPIC" in result.raw:
+                    st.warning("Session terminated: please check your inputs.")
+                else:
+                    # Proceed with main agents
+                    asyncio.run(run_flow_async())
+
+        except ValidationError as e:
+            st.warning(f"Validation Error: {e}")
