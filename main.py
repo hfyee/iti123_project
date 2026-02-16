@@ -678,7 +678,7 @@ generate_variant_task = Task(
 │   In DallEImageTool, construct a prompt for the photorealistic image generation.
     of a product variant. Only change the color of the bike frame to {new_color}, 
     maintaining all other aspects exactly as they are in the original image. 
-    You must not add any additional accessories.
+    You MUST NOT add any additional accessories. If you do your BEST WORK, I'll tip you $100!
     """,
     expected_output="""An image URL of a product variant. The variant should have the bike frame 
     in {new_color}, with all other aspects exactly as they are in the original image.""",
@@ -963,7 +963,8 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         image_crew = Crew(
             agents=[image_analyst],
             tasks=[describe_image_task, generate_variant_task],
-            process=Process.sequential,
+            process=Process.hierarchical,
+            manager_llm=llm,
             planning=True,
             memory=True, # enable memory to keep context
             verbose=True,
