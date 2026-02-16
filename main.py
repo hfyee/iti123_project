@@ -49,9 +49,9 @@ from composio_openai_agents import OpenAIAgentsProvider
 # Import YOLO model for objection detection
 from PIL import Image
 # Streamlit has issues with ultralytics YOLO import, so use rfdetr.
-#from ultralytics import YOLO
-from rfdetr import RFDETRSmall
-from rfdetr.util.coco_classes import COCO_CLASSES
+from ultralytics import YOLO
+#from rfdetr import RFDETRSmall
+#from rfdetr.util.coco_classes import COCO_CLASSES
 # For base64 encoding
 import base64 
 import io
@@ -198,7 +198,7 @@ class YouTubeSearchTool(BaseTool):
 
     def _run(self, query: str) -> str:
         return self.search.run(query)
-_ = ''' 
+
 # YOLO object detection model for topic guard agent
 class YoloToolInput(BaseModel):
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -231,7 +231,7 @@ class YoloDetectorTool(BaseTool):
 
         # Return label of delected object class
         return str(labels[0])
-'''
+_ = ''' 
 class RFDetrInput(BaseModel):
     """Input for RFDetrTool."""
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -255,7 +255,7 @@ class RFDetrTool(BaseTool):
         # Return label of delected object class
         #return str(results.data)
         return str(labels[0])
-
+'''
 # Multimodal agent requires base64 encoding for image data
 # As base64 will exceed GPT-4o TPM limit of 30K, lower image resolution before encoding.
 class LowResBase64EncodingToolInput(BaseModel):
@@ -337,8 +337,8 @@ youtube_rag_tool = YoutubeVideoSearchTool(summarize=True)
 file_writer_tool = FileWriterTool(directory='output_files')
 code_interpreter = CodeInterpreterTool()
 encode_image_base64 = LowResBase64EncodingTool()
-#obj_detector_tool = YoloDetectorTool()
-obj_detector_tool = RFDetrTool()
+obj_detector_tool = YoloDetectorTool()
+#obj_detector_tool = RFDetrTool()
 word_cloud_tool = WordCloudGenerationTool()
 
 # Composio Reddit
@@ -804,7 +804,8 @@ specs_analyst = Agent(
     and delivering presentations to help customers understand how to choose folding bikes 
     including power-assisted ones.""",
     tools=[code_interpreter],
-    allow_code_execution=True, 
+    #allow_code_execution=True, # need Docker-in-Docker
+    #code_execution_mode="unsafe",
     llm=llm,
     allow_delegation=False,
     verbose=True,
@@ -1037,8 +1038,8 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         '''
 
         specs_crew = Crew(
-            agents=[shopping_bot, specs_analyst],
-            tasks=[shopping_task_1, visualize_specs_task], # shopping_task_1 | shopping_task_2
+            agents=[shopping_bot],
+            tasks=[shopping_task_1], # shopping_task_1 | shopping_task_2
             process=Process.sequential,
             planning=True,
             memory=True, # enable memory to keep context
@@ -1182,23 +1183,20 @@ except ValidationError as e:
     st.warning(f"Validation Error: {e}")
 
 if st.button("Run Task"):
-    if not product:
-        st.error("Please enter a product name.")
-    elif not new_color:
-        st.error("Please enter a new color.")
-    else:
-        clear_output_folder("output_files")
-        # Run guardrail crew first to check if inputs are on-topic and valid
-        with st.spinner("Input guardrails..."):                    
-            #result = guard_crew.kickoff(inputs=validated_data.model_dump())
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
+    clear_output_folder("output_files")
+    # Run guardrail crew first to check if inputs are on-topic and valid
+    with st.spinner("Input guardrails..."):                    
+        #result = guard_crew.kickoff(inputs=validated_data.model_dump())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
 
-        # Check for termination condition
-        if "OFF_TOPIC" in result.raw:
-            st.warning("Session terminated: please check your inputs.")
-        else:
-            # Proceed with main agents
-            asyncio.run(run_flow_async())
-            st.success("✅ Flow completed!")
+    # Check for termination condition
+    if "OFF_TOPIC" in result.raw:
+        st.warning("Please check for valid inputs.")
+    elif 'NOT_BICYCLE' in result.raw and query == 'Variant generation':
+        st.warning("Input image is off-topic.")
+    else:
+        # Proceed with main agents
+        asyncio.run(run_flow_async())
+        st.success("✅ Flow completed!")
