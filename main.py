@@ -1111,7 +1111,7 @@ with col1:
 with col2:
     st.title("AI-powered Market Research Assistant")
     #st.markdown("<h2 style='margin-top: 0px;'>AI-powered Market Research Assistant</h2>", unsafe_allow_html=True)
-st.markdown("Hi, enter a folding bike product/brand, and let me help you with the market research.")
+st.markdown("Hi, enter a folding bike product, and let me help you with the market research.")
 
 # --- SIDEBAR: CONFIGURATION ---
 with st.sidebar:
