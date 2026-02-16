@@ -49,9 +49,9 @@ from composio_openai_agents import OpenAIAgentsProvider
 # Import YOLO model for objection detection
 from PIL import Image
 # Streamlit has issues with ultralytics YOLO import, so use rfdetr.
-from ultralytics import YOLO
-#from rfdetr import RFDETRSmall
-#from rfdetr.util.coco_classes import COCO_CLASSES
+#from ultralytics import YOLO
+from rfdetr import RFDETRSmall
+from rfdetr.util.coco_classes import COCO_CLASSES
 # For base64 encoding
 import base64 
 import io
@@ -198,7 +198,7 @@ class YouTubeSearchTool(BaseTool):
 
     def _run(self, query: str) -> str:
         return self.search.run(query)
-    
+_ = ''' 
 # YOLO object detection model for topic guard agent
 class YoloToolInput(BaseModel):
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -231,7 +231,7 @@ class YoloDetectorTool(BaseTool):
 
         # Return label of delected object class
         return str(labels[0])
-
+'''
 class RFDetrInput(BaseModel):
     """Input for RFDetrTool."""
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -337,8 +337,8 @@ youtube_rag_tool = YoutubeVideoSearchTool(summarize=True)
 file_writer_tool = FileWriterTool(directory='output_files')
 code_interpreter = CodeInterpreterTool()
 encode_image_base64 = LowResBase64EncodingTool()
-obj_detector_tool = YoloDetectorTool()
-#obj_detector_tool = RFDetrTool()
+#obj_detector_tool = YoloDetectorTool()
+obj_detector_tool = RFDetrTool()
 word_cloud_tool = WordCloudGenerationTool()
 
 # Composio Reddit
@@ -687,7 +687,7 @@ generate_variant_task = Task(
 )
 
 # -----------------------------
-# Shopping agent
+# Specs collection and visualization agents
 # -----------------------------
 shopping_bot = Agent(
     role="Shopping Specialist for folding ebikes",
@@ -795,6 +795,35 @@ shopping_task_2 = Task(
     """,
     agent=shopping_bot,
     output_file="output_files/specs_data.json"
+)
+
+specs_analyst = Agent(
+    role="Senior Sales Engineer",
+    goal="Analyze and compare technical specifications of competitor products to form insights.",
+    backstory="""An experienced sales engineer with expertise in creating technical proposals 
+    and delivering presentations to help customers understand how to choose folding bikes 
+    including power-assisted ones.""",
+    tools=[code_interpreter],
+    allow_code_execution=True, 
+    llm=llm,
+    allow_delegation=False,
+    verbose=True,
+    max_iter=5
+)
+
+visualize_specs_task = Task(
+    description="""                                                                 │
+│   1. Locate the JSON file at 'output_files/specs_data.json'.
+    2. Write and execute Python code to visualize the JSON data. The visualizations should break 
+    down the ebike specifications to help the user compare them based on product attributes 
+    such as weight, range, and battery capacity.
+    3. Discuss how the different ebike models differentiate, and provide insights for consumer 
+    decision making.
+    """,
+    expected_output="""A well-structured and insightful comparison of the ebike specifications 
+    from the JSON data, illustrated by high-quality charts.""",
+    context=[shopping_task_1],
+    agent=specs_analyst,
 )
 
 # -----------------------------
@@ -1007,22 +1036,23 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         crew_inputs = {"competitors": competitor_names}
         '''
 
-        shopping_crew = Crew(
-            agents=[shopping_bot],
-            tasks=[shopping_task_1], # shopping_task_1 | shopping_task_2
+        specs_crew = Crew(
+            agents=[shopping_bot, specs_analyst],
+            tasks=[shopping_task_1, visualize_specs_task], # shopping_task_1 | shopping_task_2
             process=Process.sequential,
             planning=True,
             memory=True, # enable memory to keep context
             verbose=True,
-            output_log_file="output_files/shopping_crew_log"
+            output_log_file="output_files/specs_crew_log"
         )
 
         with st.spinner("Searching for product specifications..."):
             #result = await shopping_crew.kickoff_async(inputs=crew_inputs)
-            result = await shopping_crew.kickoff_async()
+            result = await specs_crew.kickoff_async()
 
         st.markdown("### ✨ Results:")
-        st.write("Specs data collection saved to output_files/specs_data.json")
+        #st.write("Specs data collection saved to output_files/specs_data.json")
+        st.write(result.raw)
 
     @listen("unsupported")
     def exit_flow(self):
