@@ -26,3 +26,4 @@ types-requests==2.32.4.20260107
 wikipedia==1.4.0
 wordcloud==1.9.6
 gunicorn==21.2.0
+opencv-python-headless
