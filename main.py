@@ -988,29 +988,28 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         else:
             st.warning("Failed to generate image variant.")
 
-    @listen(analyze_market)
+    #@listen(analyze_market)
+    @listen("specs_data_collection")
     async def collect_specs(self, analysis) -> None:
         """Search for competitor product specs"""
         st.divider()        
         #st.write("Starting search for product specifications from competitors:")
 
         _ = '''
-        if isinstance(analysis, dict):
-            # If we got a dict with 'competitors' key, extract the actual analysis object
-            competitors = analysis.get("competitors")
-        '''
-
         # Extract competitor names from the market research analysis
         with open('output_files/research.json', 'r') as f:
             data = json.load(f)           
             competitor_names = [competitor['name'] for competitor in data['competitors']]
-        
+
         for competitor in competitor_names:
             st.write(f"- {competitor}")
+        
+        crew_inputs = {"competitors": competitor_names}
+        '''
 
         shopping_crew = Crew(
             agents=[shopping_bot],
-            tasks=[shopping_task_2],
+            tasks=[shopping_task_1], # shopping_task_1 | shopping_task_2
             process=Process.sequential,
             planning=True,
             memory=True, # enable memory to keep context
@@ -1018,10 +1017,9 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             output_log_file="output_files/shopping_crew_log"
         )
 
-        crew_inputs = {"competitors": competitor_names}
-
         with st.spinner("Searching for product specifications..."):
-            result = await shopping_crew.kickoff_async(inputs=crew_inputs)
+            #result = await shopping_crew.kickoff_async(inputs=crew_inputs)
+            result = await shopping_crew.kickoff_async()
 
         st.markdown("### ✨ Results:")
         st.write("Specs data collection saved to output_files/specs_data.json")
