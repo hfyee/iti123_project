@@ -49,9 +49,9 @@ from composio_openai_agents import OpenAIAgentsProvider
 # Import YOLO model for objection detection
 from PIL import Image
 # Streamlit has issues with ultralytics YOLO import, so use rfdetr.
-#from ultralytics import YOLO
-from rfdetr import RFDETRSmall
-from rfdetr.util.coco_classes import COCO_CLASSES
+from ultralytics import YOLO
+#from rfdetr import RFDETRSmall
+#from rfdetr.util.coco_classes import COCO_CLASSES
 # For base64 encoding
 import base64 
 import io
@@ -199,7 +199,6 @@ class YouTubeSearchTool(BaseTool):
     def _run(self, query: str) -> str:
         return self.search.run(query)
 
-_ = '''
 # YOLO object detection model for topic guard agent
 class YoloToolInput(BaseModel):
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -232,7 +231,7 @@ class YoloDetectorTool(BaseTool):
 
         # Return label of delected object class
         return str(labels[0])
-''' 
+_ = ''' 
 class RFDetrInput(BaseModel):
     """Input for RFDetrTool."""
     image_path: str = Field(..., description="URL or local path to the image.")
@@ -256,7 +255,7 @@ class RFDetrTool(BaseTool):
         # Return label of delected object class
         #return str(results.data)
         return str(labels[0])
-
+'''
 # Multimodal agent requires base64 encoding for image data
 # As base64 will exceed GPT-4o TPM limit of 30K, lower image resolution before encoding.
 class LowResBase64EncodingToolInput(BaseModel):
@@ -338,8 +337,8 @@ youtube_rag_tool = YoutubeVideoSearchTool(summarize=True)
 file_writer_tool = FileWriterTool(directory='output_files')
 code_interpreter = CodeInterpreterTool()
 encode_image_base64 = LowResBase64EncodingTool()
-#obj_detector_tool = YoloDetectorTool()
-obj_detector_tool = RFDetrTool()
+obj_detector_tool = YoloDetectorTool()
+#obj_detector_tool = RFDetrTool()
 word_cloud_tool = WordCloudGenerationTool()
 
 # Composio Reddit
@@ -461,7 +460,6 @@ video_researcher = Agent(
     backstory='An expert researcher who specializes in analyzing video content.',
     tools=[youtube_rag_tool, file_writer_tool],
     verbose=True,
-    llm=llm
 )
 
 # Define the task more generally to process multiple videos
@@ -613,7 +611,7 @@ editor = Agent(
 )
 
 editing_task = Task(
-    description="""Review and improve the report.
+    description="""Review and edit the report.
 
     Target audience: Product Marketing Manager for {product} company
 
@@ -700,7 +698,7 @@ shopping_bot = Agent(
     llm=llm,
     allow_delegation=False,
     verbose=True,
-    max_iter=10
+    max_iter=15
 )
 
 shopping_task_1 = Task(
