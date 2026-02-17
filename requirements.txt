@@ -1,3 +1,5 @@
+numpy
+opencv-python-headless
 composio
 composio-client
 composio-openai-agents
@@ -28,5 +30,3 @@ types-requests
 wikipedia
 wordcloud
 gunicorn
-numpy
-opencv-python-headless
