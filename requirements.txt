@@ -18,6 +18,8 @@ python-dotenv
 requests
 requests-oauthlib
 requests-toolbelt
+numpy
+opencv-python-headless
 rfdetr
 #ultralytics
 #ultralytics-thop
@@ -27,5 +29,3 @@ types-requests
 wikipedia
 wordcloud
 gunicorn
-numpy
-opencv-python-headless
