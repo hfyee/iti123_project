@@ -18,8 +18,7 @@ python-dotenv
 requests
 requests-oauthlib
 requests-toolbelt
-numpy
-opencv-python-headless
+torch==2.0.1
 rfdetr
 #ultralytics
 #ultralytics-thop
@@ -29,3 +28,5 @@ types-requests
 wikipedia
 wordcloud
 gunicorn
+numpy
+opencv-python-headless
