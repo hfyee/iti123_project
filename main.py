@@ -458,7 +458,7 @@ video_researcher = Agent(
     role="Video Researcher",
     goal="Extract relevant information from YouTube videos",
     backstory='An expert researcher who specializes in analyzing video content.',
-    tools=[youtube_rag_tool, file_writer_tool],
+    tools=[youtube_rag_tool],
     verbose=True,
 )
 
@@ -472,9 +472,6 @@ video_research_task = Task(
     4. What makes its products unique/competitive
     5. How the company strives to be innovative (e.g. culture)
     6. Collaborations
-
-    Use the 'FileWriterTool' to write the summary into a markdown file inside
-    the directory 'output_files'.
     """,
     expected_output="""A summary of the company's R&D strategy, collaborations,
     technical expertise, and design philosophy mentioned in the video.""",
@@ -675,13 +672,24 @@ describe_image_task = Task(
 
 generate_variant_task = Task(
     description="""                                                                 │
-│   In DallEImageTool, construct a prompt for the photorealistic image generation.
-    of a product variant. Only change the color of the bike frame to {new_color}, 
-    maintaining all other aspects exactly as they are in the original image. 
-    You MUST NOT add any additional accessories. If you do your BEST WORK, I'll tip you $100!
+│   Generate a DALL-E 3 prompt for a {new_color} version of the bike. 
+    Only change the color of the BIKE FRAME to {new_color}, maintaining all other aspects 
+    exactly as they are in the original image. You MUST NOT add any additional accessories.
     """,
-    expected_output="""An image URL of a product variant. The variant should have the bike frame 
-    in {new_color}, with all other aspects exactly as they are in the original image.""",
+    context=[describe_image_task],
+    expected_output="A URL to the generated image.",
+    agent=image_analyst,
+    result_as_answer=True
+)
+
+generate_image_variant_task = Task(
+    description="""                                                                 │
+    1. Analyze the input image at {image_url} to understand its design language.
+    2. Generate a DALL-E 3 prompt for a {new_color} version.
+    Only change the color of the bike frame to {new_color}, maintaining all other aspects 
+    exactly as they are in the original image. You MUST NOT add any additional accessories.
+    """,
+    expected_output="A URL to the generated image.",
     agent=image_analyst,
     result_as_answer=True
 )
@@ -864,29 +872,6 @@ aggregate_checks_task = Task(
 )
 
 # -----------------------------
-# Router agent
-# -----------------------------
-router_agent = Agent(
-    role='User Query Router',
-    goal='Accurately route user queries to specialized crews.',
-    backstory='An expert at analyzing user queries to route them to the correct department.',
-    verbose=True,
-    allow_delegation=False,
-)
-
-routing_task = Task(
-    description="""Analyze the user query: {query}. Determine if it is a market research, 
-    variant generation, video transcription, specs data collection, or none of the above. 
-    If none of the above, it is considered an unsupported request.
-
-    Return 'market_research', 'variant_generation', 'video_transcription',
-    'specs_data_collection' or 'unsupported'.""",
-    expected_output="""A string: 'market_research', 'variatnt_generation',
-    'video_transcription', 'specs_data_collection' or 'unsupported'.""",
-    agent=router_agent
-)
-
-# -----------------------------
 # Flow state and class
 # -----------------------------
 
@@ -920,16 +905,16 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     def route_query(self):
         query_type = self.state.query_type
         if query_type == "Market research":
-            return "analyze_market"
+            return "research_crew"
         elif query_type == "Variant generation":
-            return "generate_variant"
+            return "image_crew"
         elif query_type == "Video transcription":
-            return "transcribe_video"
+            return "video_crew"
         elif query_type == "Specs data collection":
-            return "collect_specs"
+            return "specs_crew"
         return "unsupported"
-
-    @listen("analyze_market")
+    
+    @listen("research_crew")
     async def analyze_market(self):
         """Conduct market research on product"""
         st.divider()
@@ -942,7 +927,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             #manager_llm=llm, # manager_llm=llm | manager_agent=manager
             planning=True,
             memory=True,
-            verbose=False,
+            verbose=True,
             output_log_file="output_files/research_crew_log"
         )
 
@@ -960,7 +945,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         # Return the analysis to update the state
         return {"analysis": result.pydantic}
     
-    @listen("transcribe_video")
+    @listen("video_crew")
     async def transcribe_video(self):
         """Summarize YouTube video"""
         st.divider()        
@@ -982,19 +967,18 @@ class MarketResearchFlow(Flow[MarketResearchState]):
 
         st.markdown("### ✨ Results:")
         st.write(result.raw)
-        video_transcript_file = st.file_uploader("Choose a file")
 
-    @listen("generate_variant")
+    @listen("image_crew")
     async def generate_variant(self):
         """Analyze existing product image and generate a variant"""
-        #st.write(f"Starting variant generation for {self.state.image_url}")
+        st.write(f"Starting variant generation for {self.state.image_url}")
 
         image_crew = Crew(
             agents=[image_analyst],
-            tasks=[describe_image_task, generate_variant_task],
+            #tasks=[describe_image_task, generate_variant_task],
+            tasks=[generate_image_variant_task],
             process=Process.sequential,
             planning=True,
-            memory=True, 
             verbose=True,
             output_log_file="output_files/image_crew_log"
         )
@@ -1017,7 +1001,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             st.warning("Failed to generate image variant.")
 
     #@listen(analyze_market)
-    @listen("collect_specs")
+    @listen("specs_crew")
     async def collect_specs(self, analysis):
         """Search for competitor product specs"""
         st.divider()        
@@ -1055,7 +1039,6 @@ class MarketResearchFlow(Flow[MarketResearchState]):
 
     @listen("unsupported")
     def exit_flow(self):
-        """Exit flow if query is off-topic"""
         st.warning(f"Sorry, Unsupported query type.")
         return "Exiting flow"
 
