@@ -803,9 +803,8 @@ specs_analyst = Agent(
     backstory="""An experienced sales engineer with expertise in creating technical proposals 
     and delivering presentations to help customers understand how to choose folding bikes 
     including power-assisted ones.""",
-    tools=[code_interpreter],
+    tools=[code_interpreter, file_writer_tool],
     #allow_code_execution=True, # need Docker-in-Docker
-    #code_execution_mode="unsafe",
     llm=llm,
     allow_delegation=False,
     verbose=True,
@@ -815,9 +814,9 @@ specs_analyst = Agent(
 visualize_specs_task = Task(
     description="""                                                                 │
 │   1. Locate the JSON file at 'output_files/specs_data.json'.
-    2. Write and execute Python code to visualize the JSON data. The visualizations should break 
-    down the ebike specifications to help the user compare them based on product attributes 
-    such as weight, range, and battery capacity.
+    2. Generate visualization for the JSON data and output interactive HTML file. 
+    The visualizations should break down the ebike specifications to help the user compare 
+    them based on product attributes such as weight, range, and battery capacity.
     3. Discuss how the different ebike models differentiate, and provide insights for consumer 
     decision making.
     """,
@@ -1038,8 +1037,8 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         '''
 
         specs_crew = Crew(
-            agents=[shopping_bot],
-            tasks=[shopping_task_1], # shopping_task_1 | shopping_task_2
+            agents=[shopping_bot, specs_analyst],
+            tasks=[shopping_task_1, visualize_specs_task], # shopping_task_1 | shopping_task_2
             process=Process.sequential,
             planning=True,
             memory=True, # enable memory to keep context
