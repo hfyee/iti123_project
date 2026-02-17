@@ -183,14 +183,6 @@ class WikipediaTool(BaseTool):
         api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=250)
         return api_wrapper.run(query)
 
-class DallEImageTool(BaseTool):
-    name: str = "dalle"
-    description: str = "Useful for when you need to generate an image from a text prompt."
-
-    def _run(self, query: str) -> str:
-        api_wrapper = DallEAPIWrapper(model="dall-e-3", size="1024x1024")
-        return api_wrapper.run(query)
-
 class YouTubeSearchTool(BaseTool):
     name: str = "youtube"
     description: str = "Useful for when you need to search for videos on YouTube."
@@ -198,6 +190,14 @@ class YouTubeSearchTool(BaseTool):
 
     def _run(self, query: str) -> str:
         return self.search.run(query)
+    
+class DallEImageTool(BaseTool):
+    name: str = "dalle"
+    description: str = "Useful for when you need to generate an image from a text prompt."
+
+    def _run(self, query: str) -> str:
+        api_wrapper = DallEAPIWrapper(model="dall-e-3", size="1024x1024")
+        return api_wrapper.run(query)
 
 # YOLO object detection model for topic guard agent
 class YoloToolInput(BaseModel):
@@ -478,7 +478,7 @@ video_research_task = Task(
     """,
     expected_output="""A summary of the company's R&D strategy, collaborations,
     technical expertise, and design philosophy mentioned in the video.""",
-    #output_file='output_files/video_transcript.md',
+    output_file='output_files/video_transcript.md',
     agent=video_researcher,
 )
 
@@ -844,23 +844,22 @@ topic_guard_agent = Agent(
 check_topic_task = Task(
     description="""Analyze the user inputs: {product} and {new_color}.
     Determine if {product} is about {topic} AND {new_color} is a valid color.
-    Return 'ON_TOPIC' or 'OFF_TOPIC'.""",
-    expected_output="A string: 'ON_TOPIC' or 'OFF_TOPIC'",
+    Return 'ALLOWED' or 'OFF_TOPIC'.""",
+    expected_output="ALLOWED or OFF_TOPIC",
     agent=topic_guard_agent
 )
 
 check_input_image_task = Task(
-    description="""Use tool to determine if the image at {image_url} is a bicycle. 
-    Return 'BICYCLE' or 'NOT_BICYCLE'.""",
-    expected_output="A string: 'BICYCLE' or 'NOT_BICYCLE'",
+    description="""Use tool to detect if the image at {image_url} contains a bicycle. 
+    Return 'ALLOWED' or 'OFF_TOPIC'.""",
+    expected_output="ALLOWED or OFF_TOPIC",
     agent=topic_guard_agent
 )
 
 aggregate_checks_task = Task(
-    description="Concatenate the findings from the check_topic and check_input_image tasks.",
+    description="If any check is OFF_TOPIC, return OFF_TOPIC. Else ALLOWED.",
     context=[check_topic_task, check_input_image_task],
-    expected_output="""A list of two strings: 'ON_TOPIC' or 'OFF_TOPIC', and
-    'BICYCLE' or 'NOT_BICYCLE'""",
+    expected_output="Final status string",
     agent=topic_guard_agent
 )
 
@@ -892,7 +891,7 @@ routing_task = Task(
 # -----------------------------
 
 class MarketResearchState(BaseModel):
-    query: str = ""
+    query_type: str = ""
     product: str = ""
     video_url: str = ""
     image_url: str = ""
@@ -903,35 +902,35 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     """Flow for performing market research for consumer product"""
 
     @start()
-    def start_flow(self) -> Dict[str, Any]:
+    def start_flow(self):
         """Initialize"""
-        print(f"Starting flow for {self.state.query}")
+        print(f"Starting flow for {self.state.query_type}")
 
         # Ensure output directory exists before saving
         os.makedirs("output_files", exist_ok=True)
 
-        return {"query": self.state.query,
+        return {"query_type": self.state.query_type,
                 "product": self.state.product,
                 "video_url": self.state.video_url,
                 "image_url": self.state.image_url,
-                "new_color": self.state.new_color}
+                "new_color": self.state.new_color
+                }
 
     @router(start_flow)
-    def route_query(self) -> Literal['market_research', 'variant_generation',
-                  'video_transcription', 'specs_data_collection', 'unsupported']:
-        """Route query to the correct crew"""
+    def route_query(self):
+        query_type = self.state.query_type
+        if query_type == "Market research":
+            return "analyze_market"
+        elif query_type == "Variant generation":
+            return "generate_variant"
+        elif query_type == "Video transcription":
+            return "transcribe_video"
+        elif query_type == "Specs data collection":
+            return "collect_specs"
+        return "unsupported"
 
-        router_crew = Crew(
-            agents=[router_agent],
-            tasks=[routing_task],
-        )
-
-        result = router_crew.kickoff(inputs=validated_data.model_dump())
-        print("## Router output:", result)
-        return result
-
-    @listen("market_research")
-    async def analyze_market(self) -> Dict[str, Any]:
+    @listen("analyze_market")
+    async def analyze_market(self):
         """Conduct market research on product"""
         st.divider()
         #st.write(f"Starting market research for {self.state.product}") 
@@ -942,7 +941,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             process=Process.sequential, # Process.sequential | Process.hierarchical
             #manager_llm=llm, # manager_llm=llm | manager_agent=manager
             planning=True,
-            memory=True, # enable memory to keep context
+            memory=True,
             verbose=False,
             output_log_file="output_files/research_crew_log"
         )
@@ -961,8 +960,8 @@ class MarketResearchFlow(Flow[MarketResearchState]):
         # Return the analysis to update the state
         return {"analysis": result.pydantic}
     
-    @listen("video_transcription")
-    async def analyze_video(self) -> None:
+    @listen("transcribe_video")
+    async def transcribe_video(self):
         """Summarize YouTube video"""
         st.divider()        
         #st.write(f"Starting summary of YouTube video at {self.state.video_url}")
@@ -983,19 +982,19 @@ class MarketResearchFlow(Flow[MarketResearchState]):
 
         st.markdown("### ✨ Results:")
         st.write(result.raw)
+        video_transcript_file = st.file_uploader("Choose a file")
 
-    @listen("variant_generation")
-    async def generate_variant(self) -> None:
+    @listen("generate_variant")
+    async def generate_variant(self):
         """Analyze existing product image and generate a variant"""
         #st.write(f"Starting variant generation for {self.state.image_url}")
 
         image_crew = Crew(
             agents=[image_analyst],
             tasks=[describe_image_task, generate_variant_task],
-            process=Process.hierarchical,
-            manager_llm=llm,
+            process=Process.sequential,
             planning=True,
-            memory=True, # enable memory to keep context
+            memory=True, 
             verbose=True,
             output_log_file="output_files/image_crew_log"
         )
@@ -1018,8 +1017,8 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             st.warning("Failed to generate image variant.")
 
     #@listen(analyze_market)
-    @listen("specs_data_collection")
-    async def collect_specs(self, analysis) -> None:
+    @listen("collect_specs")
+    async def collect_specs(self, analysis):
         """Search for competitor product specs"""
         st.divider()        
         #st.write("Starting search for product specifications from competitors:")
@@ -1041,7 +1040,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             tasks=[shopping_task_1, visualize_specs_task], # shopping_task_1 | shopping_task_2
             process=Process.sequential,
             planning=True,
-            memory=True, # enable memory to keep context
+            memory=True, 
             verbose=True,
             output_log_file="output_files/specs_crew_log"
         )
@@ -1057,7 +1056,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
     @listen("unsupported")
     def exit_flow(self):
         """Exit flow if query is off-topic"""
-        st.warning(f"Sorry, your question, {self.state.query}, is not not supported.")
+        st.warning(f"Sorry, Unsupported query type.")
         return "Exiting flow"
 
 _ = '''
@@ -1092,14 +1091,14 @@ guard_crew = Crew(
 
 # Validate inputs before passing to crew
 class InputValidator(BaseModel):
-    query: str
+    query_type: str
     product: str
     video_url: str
     image_url: str
     new_color: str
     topic: str
 
-    @field_validator('query', 'product', 'video_url', 'image_url', 'new_color', 'topic')
+    @field_validator('query_type', 'product', 'video_url', 'image_url', 'new_color', 'topic')
     @classmethod
     def check_not_empty(cls, v) -> str:
         if v is None or len(v.strip()) == 0:
@@ -1114,7 +1113,7 @@ class InputValidator(BaseModel):
             raise ValueError(f"File not found: {v}")
         return v
 
-# --- run functions ---
+# --- runtime functions ---
 
 def clear_output_folder(folderPath="output_files"):
     if os.path.exists(folderPath):
@@ -1145,7 +1144,7 @@ st.markdown("Hi, enter a folding bike product, and let me help you with the mark
 # --- SIDEBAR: CONFIGURATION ---
 with st.sidebar:
     st.header("⚙️ User inputs")
-    query = st.radio("Select task:", ['Market research', 'Variant generation', 
+    query_type = st.radio("Select task:", ['Market research', 'Variant generation', 
                             'Video transcription', 'Specs data collection'], index=0)
     product = st.text_input("Product:", placeholder="e.g., Tern folding bike", value="Tern folding bike")
     video_url = st.text_input("Video link for analysis:", value="https://www.youtube.com/watch?v=lhDoB9rGbGQ")
@@ -1168,7 +1167,7 @@ with st.sidebar:
 
 # Validate inputs before passing to crew
 raw_data = {
-    "query": query,
+    "query_type": query_type,
     "product": product,
     "video_url": video_url,
     "image_url": image_url,
@@ -1191,10 +1190,8 @@ if st.button("Run Task"):
         result = loop.run_until_complete(run_crew_async(guard_crew, inputs=validated_data.model_dump()))
 
     # Check for termination condition
-    if "OFF_TOPIC" in result.raw:
-        st.warning("Please check for valid inputs.")
-    elif 'NOT_BICYCLE' in result.raw and query == 'Variant generation':
-        st.warning("Input image is off-topic.")
+    if "OFF_TOPIC" in str(result):
+        st.warning("Please check your inputs are valid.")
     else:
         # Proceed with main agents
         asyncio.run(run_flow_async())
