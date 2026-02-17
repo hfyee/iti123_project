@@ -18,6 +18,7 @@ python-dotenv
 requests
 requests-oauthlib
 requests-toolbelt
+opencv-python-headless
 #rfdetr
 ultralytics
 ultralytics-thop
@@ -27,4 +28,3 @@ types-requests
 wikipedia
 wordcloud
 gunicorn
-opencv-python-headless
