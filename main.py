@@ -524,7 +524,7 @@ analyst = Agent(
     diving deeper. """,
     tools=[rag_tool, wiki_tool, web_search_tool, youtube_tool],
     allow_delegation=True,
-    max_iter=5,
+    max_iter=10,
     verbose=True,
     llm=llm,
 )
@@ -557,7 +557,7 @@ writer = Agent(
     intelligence and market analysis. You have an MBA from a top school. You excel
     at synthesizing information into clear and actionable insights.""",
     allow_delegation=True,
-    max_iter=5,
+    max_iter=10,
     verbose=True,
     llm=llm,
 )
@@ -602,7 +602,7 @@ editor = Agent(
     meets high standards for clarity and accuracy.""",
     tools=[rag_tool, wiki_tool, youtube_rag_tool, file_writer_tool],
     allow_delegation=True,
-    max_iter=5,
+    max_iter=10,
     verbose=True,
     llm=llm,
 )
@@ -621,7 +621,7 @@ editing_task = Task(
     6. Check if embedded video links are accessible and not private/deleted
 
     Use the 'FileWriterTool' to write the final content into a markdown file 
-    inside the 'output_files' directory.""",
+    in the 'output_files' directory.""",
     context=[writing_task],
     expected_output="A markdown file saved in the 'output_files' directory.",
     #output_file='output_files/final_report.md',
@@ -706,7 +706,7 @@ shopping_bot = Agent(
     llm=llm,
     allow_delegation=False,
     verbose=True,
-    max_iter=15
+    max_iter=10
 )
 
 shopping_task_1 = Task(
@@ -816,15 +816,15 @@ specs_analyst = Agent(
     llm=llm,
     allow_delegation=False,
     verbose=True,
-    max_iter=5
+    max_iter=10
 )
 
 visualize_specs_task = Task(
     description="""                                                                 │
 │   1. Locate the JSON file at 'output_files/specs_data.json'.
-    2. Generate visualization for the JSON data and output interactive HTML file. 
-    The visualizations should break down the ebike specifications to help the user compare 
-    them based on product attributes such as weight, range, and battery capacity.
+    2. Generate visualization for the JSON data such as comparison table.  
+    Break down the ebike specifications to help the user compare them based on product 
+    attributes such as weight, range, and battery capacity.
     3. Discuss how the different ebike models differentiate, and provide insights for consumer 
     decision making.
     """,
@@ -1115,7 +1115,7 @@ async def run_flow_async():
 
 # --- PAGE CONFIG ---
 icon_img = Image.open("bicycle_icon.png")
-st.set_page_config(layout="wide")
+st.set_page_config(layout="centered")
 col1, col2 = st.columns([1, 10])
 with col1:
     st.image(icon_img, width=50)
@@ -1142,11 +1142,11 @@ with st.sidebar:
 
     new_color = st.text_input("New color for product variant:", placeholder="e.g., white, blue, gold, red, green", value="white")
     st.divider()
-    #st.info("Version v0.2.0")
     if st.button("Reset Session"):
         st.session_state.clear()
         st.rerun()
         clear_output_folder("output_files")
+    st.info("Version v0.3.0")
 
 # Validate inputs before passing to crew
 raw_data = {
