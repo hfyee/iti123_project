@@ -122,7 +122,7 @@ vectordb: VectorDbConfig = {
 embedding_model: ProviderSpec = {
     "provider": "openai",
     "config": {
-        "model_name": "text-embedding-3-large"
+        "model_name": "text-embedding-3-small"
     }
 }
 
@@ -270,7 +270,7 @@ class LowResBase64EncodingTool(BaseTool):
     description: str = 'Useful for encoding an image file to a base64 string.'
     args_schema: Type[BaseModel] = LowResBase64EncodingToolInput
 
-    def _run(self, image_path: str, max_width: int = 800, max_height: int = 800, quality: int = 60) -> str:
+    def _run(self, image_path: str, max_width: int = 800, max_height: int = 800, quality: int = 85) -> str:
         # Open and resize image
         img = Image.open(image_path)
         img.thumbnail((max_width, max_height)) # PIL's thumbnail expects a tuple
@@ -464,8 +464,9 @@ video_researcher = Agent(
 
 # Define the task more generally to process multiple videos
 video_research_task = Task(
-    description="""Search for the following information about the company and its
-    products mentioned in the YouTube video at {video_url}.
+    description="""Analyze the video at {video_url}. 
+    Search for the following information about the product company mentioned in 
+    the YouTube video. 
     1. Vision and design goals/philosophy
     2. Technical achievement/expertise
     3. Development challenges
@@ -671,7 +672,7 @@ describe_image_task = Task(
 )
 
 generate_variant_task = Task(
-    description="""                                                                 │
+    description="""                                                                │
 │   Generate a DALL-E 3 prompt for a {new_color} version of the bike. 
     Only change the color of the BIKE FRAME to {new_color}, maintaining all other aspects 
     exactly as they are in the original image. You MUST NOT add any additional accessories.
@@ -979,7 +980,7 @@ class MarketResearchFlow(Flow[MarketResearchState]):
             tasks=[generate_image_variant_task],
             process=Process.sequential,
             planning=True,
-            verbose=True,
+            verbose=False,
             output_log_file="output_files/image_crew_log"
         )
 
