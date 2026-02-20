@@ -431,7 +431,7 @@ class Competitor(BaseModel):
     notes: Optional[str] = None
 
 class CompetitiveAnalysis(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='allow')
     
     analysis_date: datetime = Field(default_factory=datetime.now)
     industry: str
@@ -554,9 +554,9 @@ writer = Agent(
     goal="""Create comprehensive, well-structured reports combining the provided
     research and news analysis. Do not include any information that is not explicitly
     provided.""",
-    backstory="""A professional report writer with experience in business
-    intelligence and market analysis. You have an MBA from a top school. You excel
-    at synthesizing information into clear and actionable insights.""",
+    backstory="""A professional report writer with experience in business intelligence 
+    and market analysis. You have an MBA and excel at synthesizing information into 
+    clear and actionable insights.""",
     allow_delegation=True,
     max_iter=10,
     verbose=True,
