@@ -1,0 +1,49 @@
+# Use an official lightweight Python image
+FROM python:3.12.3-slim
+
+# Prevents Python from writing pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Keeps Python from buffering stdout and stderr to avoid situations where
+# the application crashes without emitting any logs due to buffering.
+ENV PYTHONUNBUFFERED=1
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install OpenCV system dependencies (needed for ultralytics)
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libxcb1 \
+    libxcb-render0 \
+    libxcb-shape0 \
+    libxcb-xfixes0 \
+    libxcb-shm0 \
+    libxkbcommon-x11-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install system dependencies (sometimes required for certain Python packages)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the requirements file and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of your backend code
+COPY . .
+
+# Create the output directory so the app doesn't crash when saving files
+RUN mkdir -p output_files
+
+# Expose the FastAPI port
+EXPOSE 8000
+
+# Command to run the backend
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

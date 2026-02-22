@@ -1,0 +1,35 @@
+# Comments are provided throughout this file to help you get started.
+# If you need more help, visit the Docker Compose reference guide at
+# https://docs.docker.com/go/compose-spec-reference/
+
+# Here the instructions define your application as a service called "server".
+# This service is built from the Dockerfile in the current directory.
+# You can add other services your application may depend on here, such as a
+# database or a cache. For examples, see the Awesome Compose repository:
+# https://github.com/docker/awesome-compose
+services:
+  backend:
+    build: 
+      context: . # Change this to your actual backend folder name
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # This maps the container's output folder to your actual hard drive 
+      # so your generated variants and markdown files persist!
+      - ./backend/output_files:/app/output_files
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./crewai-ui # Change this to your actual frontend folder name
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Tells the frontend browser exactly where to find the backend APIs
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000 
+    depends_on:
+      - backend
+    restart: unless-stopped
+
