@@ -1,5 +1,5 @@
 '''
-Multiagent RAG system in CrewAI with Next.JS UI
+Multiagent RAG system in CrewAI with React UI
 '''
 import os
 import json
@@ -28,6 +28,15 @@ import uvicorn
 
 # Langchain Imports
 from langchain_openai import ChatOpenAI
+# For RAG pipeline
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore, PineconeRerank
+from langchain_community.document_loaders import DirectoryLoader, PyMuPDFLoader, TextLoader, WebBaseLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains import RetrievalQA
+from langchain.retrievers import ContextualCompressionRetriever
+# For tools
+from langchain_tavily import TavilySearch
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.tools import YouTubeSearchTool
 from langchain_community.utilities.dalle_image_generator import DallEAPIWrapper
@@ -59,6 +68,8 @@ url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?us
 output_path = '.env'
 gdown.download(url, output_path, quiet=False,fuzzy=True)
 load_dotenv()
+# setting USER_AGENT env var to identify your requests to websites
+os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
 # Initialize FastAPI
 app = FastAPI(title="Market Research Agent API")
@@ -107,7 +118,6 @@ class TavilySearchInput(BaseModel):
     include_images: bool = Field(default=False)
     include_image_descriptions: bool = Field(default=False)
 
-from langchain_tavily import TavilySearch
 class TavilySearchTool(BaseTool):
     name: str = "tavily_search"
     description: str = "Searches the internet using Tavily."
@@ -210,23 +220,135 @@ qa_llm = LLM(
     temperature=0.2
 )
 
-# RAG Setup
-rag_tool = RagTool(
-    name="Knowledge Base",
-    config={
-        "vectordb": {"provider": "chromadb", "config": {"collection_name": "bikes_docs", "persist_directory": "./my_vector_db"}},
-        "embedding_model": {"provider": "openai", "config": {"model_name": "text-embedding-3-small"}},
-        "top_k": 4
-    },
-    summarize=True
-)
-# Note: In a real server environment, ensure 'rag_docs' exists or handle its absence gracefully.
-if os.path.exists('rag_docs'):
-    rag_tool.add(data_type="directory", path=os.path.abspath('rag_docs'))
-rag_tool.add(data_type="website", url="https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html")
-rag_tool.add(data_type="website", url="https://en.wikipedia.org/wiki/Folding_bicycle")
+# --- Custom RAG tool ---
+
+# Document loaders
+file_loaders = {
+    '.pdf': PyMuPDFLoader,
+    '.txt': TextLoader,
+}
+
+# Define a function to create a DirectoryLoader for a specific file type
+def create_directory_loader(file_type, directory_path):
+    return DirectoryLoader(
+        path=directory_path,
+        glob=f"**/*{file_type}",
+        loader_cls=file_loaders[file_type],
+        show_progress=True
+    )
+
+# Create DirectoryLoader instances for each file type
+pdf_loader = create_directory_loader('.pdf', './rag_docs')
+txt_loader = create_directory_loader('.txt', './rag_docs')
+
+# Load the documents
+pdf_docs = pdf_loader.load()
+txt_docs = txt_loader.load()
+
+print(f"Loaded {len(pdf_docs)} PDF files.")
+'''
+for doc in pdf_docs:
+    print(f"Metadata:\n{doc.metadata}\n")
+    print(f"Content snippet:\n{doc.page_content[:100]}...\n")
+'''
+print(f"Loaded {len(txt_docs)} text files.")
+'''
+for doc in txt_docs:
+    print(f"Metadata:\n{doc.metadata}\n")
+    print(f"Content snippet:\n{doc.page_content[:100]}...\n")
+'''
+# Website loader
+urls = [
+    "https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/vehicle-types-and-registrations/PAB.html",
+    "https://en.wikipedia.org/wiki/Folding_bicycle"
+]
+
+web_loader = WebBaseLoader(urls)
+
+# Load the documents
+web_docs = web_loader.load()
+
+print(f"Loaded {len(web_docs)} URLs.")
+'''
+for doc in web_docs:
+    print(f"Metadata:\n{doc.metadata}\n")
+    print(f"Content snippet:\n{doc.page_content[:100]}...\n")
+'''
+# Split documents into chunks
+# chunk_size=500, chunk_overlap ~10% of chunk_size
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
+
+all_docs = web_docs + txt_docs + pdf_docs
+
+split_docs = text_splitter.split_documents(all_docs)
+
+# Pinecone vector store
+index_name = "iti123-openai-index"
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
+
+# Initialize vector store
+vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+
+# Add documents
+vectorstore.add_documents(split_docs)
+
+# Retrieve relevant documents
+retriever = vectorstore.as_retriever(search_type="similarity")
+'''
+# Set up RetrievalQA chain using the corrected qa_llm
+qa = RetrievalQA.from_chain_type(llm=qa_llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
+
+# Perform similarity search
+queries = [
+    "Why is frame and build quality important for an e-bike purchase?",
+    "Why do e-scooter riders face issues in safely signalling turns?"
+]
+
+query = queries[1]
+#print(vectorstore.similarity_search(query, k=3))
+result = qa.invoke({"query": query})
+print("QA Response:", result)
+'''
+class PineconeRerankTool(BaseTool):
+    name: str = "Pinecone Advanced RAG Search"
+    description: str = (
+        "Useful for retrieving specific information from the internal knowledge base "
+        "stored in Pinecone with reranking. Use this to find documents, context, or past data."
+    )
+
+    index_name: str = "iti123-openai-index"
+
+    def _run(self, query: str) -> str:
+        # Initialize embeddings (must match what you used to ingest data)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
+
+        vectorstore = PineconeVectorStore.from_existing_index(
+            index_name=self.index_name,
+            embedding=embeddings,
+        )
+
+        # Define base retriever (fetch more docs initially, e.g. 5-10)
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 4})
+
+        # Initialize reranker (return top_n relevant documents)
+        compressor = PineconeRerank(model="bge-reranker-v2-m3", top_n=2)
+
+        # Create compression pipeline
+        rerank_retriever = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=retriever
+        )
+
+        # Execute search
+        results = rerank_retriever.invoke(query)
+
+        # Format the output for the Agent
+        formatted_results = "\n\n".join([doc.page_content for doc in results])
+
+        return f"Retrieved Context:\n{formatted_results}"
 
 # Tool Instances
+rag_tool = PineconeRerankTool(index_name="iti123-openai-index")
 generation_tool = GenerationTool()
 web_search_tool = TavilySearchTool(search_depth="basic", include_images=True)
 shopping_web_search_tool = TavilySearchTool(search_depth="advanced", include_images=True)
