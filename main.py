@@ -68,7 +68,7 @@ url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?us
 output_path = '.env'
 gdown.download(url, output_path, quiet=False,fuzzy=True)
 load_dotenv()
-# setting USER_AGENT env var to identify your requests to websites
+# set USER_AGENT env var to identify your requests to websites
 os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
 # Initialize FastAPI
