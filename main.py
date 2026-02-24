@@ -12,7 +12,7 @@ os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKi
 import requests
 import yt_dlp
 from pathlib import Path
-from typing import Type, List, Optional, Dict, Any, Literal
+from typing import Type, List, Optional, Dict, Any, Literal, Tuple
 from enum import Enum
 from datetime import datetime
 import queue
@@ -399,6 +399,19 @@ def word_cloud_callback(output: TaskOutput):
     """Callback to log completion of word clouds."""
     print(f"### Sentiment analysis completed. Check {OUTPUT_DIR}/ for generated images. ###")
 
+# Function-based guardrail for grading task output
+def validate_eval_content(result: TaskOutput) -> Tuple[bool, Any]:
+    """Validate evaluation content meets requirements."""
+    try:
+        # Check word count
+        word_count = len(result.raw.split())
+        if word_count > 300:
+            return (False, "Evaluation content exceeds 300 words")
+
+        # Additional validation logic here
+        return (True, result.raw.strip())
+    except Exception as e:
+        return (False, "Unexpected error during validation")
 
 # --- Agents Definition ---
 video_researcher = Agent(
@@ -739,8 +752,10 @@ grading_task = Task(
     """,
     context=[writing_task],
     expected_output="""A brief critique of the quality of the market analysis
-    report (up to 250 words), and a score <x/10>.""",
-    agent=content_evaluator
+    report and a score <x/10>, under 300 words.""",
+    agent=content_evaluator,
+    guardrail=validate_eval_content,
+    guardrail_max_retries=3
 )
 
 check_topic_task = Task(
