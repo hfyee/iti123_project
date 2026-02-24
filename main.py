@@ -1,5 +1,5 @@
 '''
-Multiagent RAG system in CrewAI with React UI
+Multiagent RAG system in CrewAI workflow with React UI
 '''
 import os
 import json
@@ -7,7 +7,10 @@ import asyncio
 import glob
 import base64
 import io
+# Before importing requests, set USER_AGENT env var to identify your requests to websites
+os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 import requests
+import yt_dlp
 from pathlib import Path
 from typing import Type, List, Optional, Dict, Any, Literal
 from enum import Enum
@@ -68,8 +71,6 @@ url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?us
 output_path = '.env'
 gdown.download(url, output_path, quiet=False,fuzzy=True)
 load_dotenv()
-# set USER_AGENT env var to identify your requests to websites
-os.environ["USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
 # Initialize FastAPI
 app = FastAPI(title="Market Research Agent API")
@@ -188,7 +189,7 @@ class LowResBase64EncodingTool(BaseTool):
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
 
 class WordCloudToolInput(BaseModel):
-    text: str = Field(description="Text for word cloud.")
+    text: str = Field(..., description="Text for word cloud.")
     colormap: str = Field(description="Color scheme.")
     output_image_path: str = Field(description="Save path.")
 
@@ -200,6 +201,30 @@ class WordCloudGenerationTool(BaseTool):
         wordcloud = WordCloud(width=800, height=400, background_color='white', colormap=colormap).generate(text)
         wordcloud.to_file(output_image_path)
         return f"Word cloud saved to {output_image_path}"
+
+class CheckYouTubeLinkToolInput(BaseModel):
+    youtube_url: str = Field(..., description="The YouTube video URL to check.")
+
+class CheckYouTubeLinkTool(BaseTool):
+    name: str = "YouTube Link Checker"
+    description: str = "Checks if a YouTube video link is valid and accessible."
+    args_schema: Type[BaseModel] = CheckYouTubeLinkToolInput
+
+    def _run(self, youtube_url: str) -> str:
+        if not ("youtube.com/watch" in youtube_url or "youtu.be/" in youtube_url):
+          return "Invalid format: Not a recognized YouTube link."
+    
+        ydl_opts = {'quiet': True, 'no_warnings': True}
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Try to extract video information
+                info = ydl.extract_info(youtube_url, download=False)
+                if info:
+                    return f"Valid: {info.get('title', 'Unknown Title')}"
+                else:
+                    return "Unavailable: Video does not exist or is private."
+        except Exception as e:
+            return f"Error/Unavailable: {str(e)}"
 
 # --- 3. Agent & Task Setup ---
 
@@ -361,6 +386,7 @@ code_interpreter = CodeInterpreterTool()
 encode_image_base64 = LowResBase64EncodingTool()
 obj_detector_tool = YoloDetectorTool()
 word_cloud_tool = WordCloudGenerationTool()
+check_youtube_link_tool = CheckYouTubeLinkTool()
 
 # Composio Setup
 composio_tools = []
@@ -732,9 +758,18 @@ check_input_image_task = Task(
     agent=topic_guard_agent
 )
 
+check_video_link_task = Task(
+    description="""Use CheckYouTubeLinkTool to check if the video link at 
+    {video_url} is valid and accessible. If the video is private, deleted, or 
+    geoblocked, return OFF_TOPIC. Else ALLOWED.""",
+    tools=[check_youtube_link_tool],
+    expected_output="ALLOWED or OFF_TOPIC",
+    agent=topic_guard_agent
+)
+
 aggregate_checks_task = Task(
     description="If any check is OFF_TOPIC, return OFF_TOPIC. Else ALLOWED.",
-    context=[check_topic_task, check_input_image_task],
+    context=[check_topic_task, check_video_link_task, check_input_image_task],
     expected_output="Final status string.",
     agent=topic_guard_agent
 )
@@ -748,7 +783,7 @@ class MarketResearchFlow(Flow):
         print(f"--- Flow Started ---")
         # 1. Run guard_crew
         # Dynamically build the task list. If there is no image, we don't run the image check.
-        guard_tasks = [check_topic_task]
+        guard_tasks = [check_topic_task, check_video_link_task]
         if self.state.get("image_url") and len(self.state.get("image_url").strip()) > 0:
             guard_tasks.append(check_input_image_task)
         guard_tasks.append(aggregate_checks_task)
@@ -763,6 +798,7 @@ class MarketResearchFlow(Flow):
         crew_inputs = {
             "product": self.state.get("product"),
             "topic": self.state.get("topic"),
+            "video_url": self.state.get("video_url"),
             "image_url": self.state.get("image_url"),
             "new_color": self.state.get("new_color")
         }
@@ -773,7 +809,7 @@ class MarketResearchFlow(Flow):
             # Fire the explicit error straight to the React frontend
             self.update_queue.put({
                 "status": "error",
-                "message": "Your input is off-topic. Please stick to the allowed domain."
+                "message": "Your input is off-topic or invalid. Please check your inputs, and stick to the allowed domain."
             })
 
             return "HALT_FLOW"
@@ -990,9 +1026,7 @@ class MarketResearchFlow(Flow):
             description=f"""Find technical information on the bikes in this list: 
             {self.state['models_list']}.
 
-            Filter out any item on the list that is NOT a bike. 
-
-            For the bikes, extract their technical specifications. Include:
+            Extract their technical specifications. Include:
             1. An image of the bike
             2. Wheel size
             3. Number of gears
@@ -1129,22 +1163,6 @@ async def run_flow(request: ResearchRequest):
     # Ensure image_url is not null to prevent "NoneType" error in templates
     if not inputs.get('image_url'):
         inputs['image_url'] = ""
-
-    """ Moved to inside main flow
-    # 2. Guardrail Check
-    # Dynamically build the task list. If there is no image, we don't run the image check.
-    guard_tasks = [check_topic_task]
-    if inputs.get('image_url') and len(inputs['image_url'].strip()) > 0:
-        guard_tasks.append(check_input_image_task)
-    guard_tasks.append(aggregate_checks_task)
-
-    guard_crew = Crew(
-        agents=[topic_guard_agent],
-        tasks=guard_tasks,
-        process=Process.sequential,
-        verbose=True
-    )
-    """
 
     try:
         """ Moved to inside main flow
