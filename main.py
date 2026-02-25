@@ -198,7 +198,7 @@ class WordCloudGenerationTool(BaseTool):
 
 class CheckYouTubeLinkToolInput(BaseModel):
     youtube_url: str = Field(..., description="The YouTube video URL to check.")
-
+'''
 class CheckYouTubeLinkTool(BaseTool):
     name: str = "YouTube Link Checker"
     description: str = "Checks if a YouTube video link is valid and accessible."
@@ -206,9 +206,10 @@ class CheckYouTubeLinkTool(BaseTool):
 
     def _run(self, youtube_url: str) -> str:
         if not ("youtube.com/watch" in youtube_url or "youtu.be/" in youtube_url):
-          return "Invalid format: Not a recognized YouTube link."
+            return "Invalid format: Not a recognized YouTube link."
     
         ydl_opts = {'quiet': True, 'no_warnings': True}
+        #ydl_opts = {'quiet': True, 'no_warnings': True, 'cookiesfrombrowser': ('chrome',)}
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Try to extract video information
@@ -219,7 +220,18 @@ class CheckYouTubeLinkTool(BaseTool):
                     return "Unavailable: Video does not exist or is private."
         except Exception as e:
             return f"Error/Unavailable: {str(e)}"
+'''
+class CheckYouTubeLinkTool(BaseTool):
+    name: str = "YouTube Link Checker"
+    description: str = "Checks if a YouTube video link is valid and accessible."
+    args_schema: Type[BaseModel] = CheckYouTubeLinkToolInput
 
+    def _run(self, youtube_url: str) -> str:
+        if not ("youtube.com/watch" in youtube_url or "youtu.be/" in youtube_url):
+            return "Invalid format: Not a recognized YouTube link."
+        else:
+            return "Valid format: Recognized YouTube link."
+        
 # --- 3. Agent & Task Setup ---
 
 # LLM Initialization
@@ -544,8 +556,9 @@ video_research_task = Task(
     4. What makes its products unique/competitive
     5. How the company strives to be innovative (e.g. culture)
     6. Collaborations
-    Save to output_files/video_transcript.md""",
+    """,
     expected_output="Summary of video content.",
+    output_file=f"{OUTPUT_DIR}/video_transcript.md",
     agent=video_researcher
 )
 
