@@ -106,12 +106,6 @@ for key in REQUIRED_KEYS:
 # --- 2. Tool Definitions ---
 # (Maintained from original, removed Streamlit dependencies)
 
-class GenerationTool(BaseTool):
-    name: str = 'Generation'
-    description: str = 'Useful for general queries answered by the LLM.'
-    def _run(self, query: str) -> str:
-        return llm.invoke(query).content
-
 class TavilySearchInput(BaseModel):
     query: str = Field(description="The search query.")
     search_depth: str = Field(default="basic")
@@ -374,7 +368,6 @@ class PineconeRerankTool(BaseTool):
 
 # Tool Instances
 rag_tool = PineconeRerankTool(index_name="iti123-openai-index")
-generation_tool = GenerationTool()
 web_search_tool = TavilySearchTool(search_depth="basic", include_images=True)
 shopping_web_search_tool = TavilySearchTool(search_depth="advanced", include_images=True)
 wiki_tool = WikipediaTool()
