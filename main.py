@@ -309,7 +309,7 @@ split_docs = text_splitter.split_documents(all_docs)
 
 # Pinecone vector store
 index_name = "iti123-openai-index"
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
 
 # Initialize vector store
 vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
@@ -345,7 +345,7 @@ class PineconeRerankTool(BaseTool):
 
     def _run(self, query: str) -> str:
         # Initialize embeddings (must match what you used to ingest data)
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=os.getenv('OPENAI_API_KEY'), dimensions=512)
 
         vectorstore = PineconeVectorStore.from_existing_index(
             index_name=self.index_name,
