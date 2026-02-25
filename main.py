@@ -530,8 +530,8 @@ specs_analyst = Agent(
     verbose=True,
 )
 
-topic_guard_agent = Agent(
-    role="Topic Guardrail Agent",
+input_guard_agent = Agent(
+    role="Input Guardrail",
     goal="Ensure inputs are relevant and safe.",
     backstory="Vigilant moderator.",
     verbose=True,
@@ -745,7 +745,7 @@ grading_task = Task(
 
     Score Range   Meaning
     9–10	      Excellent — comprehensive with deep analysis, insights and takeaways.
-    7–8	          Addressed >80% of the questions. Generally good analysis.
+    7–8	          Addressed >80% of the questions, with generally good analysis. Professional tone and style, free from unintended bias.
     5–6	          Addressed >60% of the questions. Not a great deal of analysis. Some inconsistency in tone/style.
     1–4	          Too brief, addressed only <30% of the questions about competitors.
 
@@ -759,34 +759,42 @@ grading_task = Task(
 )
 
 check_topic_task = Task(
-    description="""Check if {product} is about {topic} AND {new_color} is a valid color. 
-    Return 'ALLOWED' or 'OFF_TOPIC'.""",
-    expected_output="ALLOWED or OFF_TOPIC",
-    agent=topic_guard_agent
+    description="""Check if {product} is about {topic}.
+    Return 'ALLOWED' or 'OFF_TOPIC (check product-topic relevance)'.""",
+    expected_output="ALLOWED or OFF_TOPIC (check product-topic relevance)",
+    agent=input_guard_agent
+)
+
+check_new_color_task = Task(
+    description="""Check if {new_color} is a valid color from this list: 
+    [white, black, red, blue, green, yellow, purple, orange, brown, pink, grey].
+    Return 'ALLOWED' or 'OFF_TOPIC (check color validity)'.""",
+    expected_output="ALLOWED or OFF_TOPIC (check color validity)",
+    agent=input_guard_agent
 )
 
 check_input_image_task = Task(
     description="""Use YOLO to detect if {image_url} contains a bicycle. 
-    Return 'ALLOWED' or 'OFF_TOPIC'.""",
+    Return 'ALLOWED' or 'OFF_TOPIC (check original image not a bicycle)'.""",
     tools=[obj_detector_tool],
-    expected_output="ALLOWED or OFF_TOPIC",
-    agent=topic_guard_agent
+    expected_output="ALLOWED or OFF_TOPIC (check original image not a bicycle)",
+    agent=input_guard_agent
 )
 
 check_video_link_task = Task(
     description="""Use CheckYouTubeLinkTool to check if the video link at 
     {video_url} is valid and accessible. If the video is private, deleted, or 
-    geoblocked, return OFF_TOPIC. Else ALLOWED.""",
+    geoblocked, return 'OFF_TOPIC (check video link not valid)'. Else 'ALLOWED'.""",
     tools=[check_youtube_link_tool],
-    expected_output="ALLOWED or OFF_TOPIC",
-    agent=topic_guard_agent
+    expected_output="ALLOWED or OFF_TOPIC (check video link validity)",
+    agent=input_guard_agent
 )
 
 aggregate_checks_task = Task(
     description="If any check is OFF_TOPIC, return OFF_TOPIC. Else ALLOWED.",
-    context=[check_topic_task, check_video_link_task, check_input_image_task],
-    expected_output="Final status string.",
-    agent=topic_guard_agent
+    context=[check_topic_task, check_new_color_task, check_video_link_task, check_input_image_task],
+    expected_output="Final status string with the reason if OFF_TOPIC.",
+    agent=input_guard_agent
 )
 
 # --- 4. Flow & Logic ---
@@ -798,13 +806,13 @@ class MarketResearchFlow(Flow):
         print(f"--- Flow Started ---")
         # 1. Run guard_crew
         # Dynamically build the task list. If there is no image, we don't run the image check.
-        guard_tasks = [check_topic_task, check_video_link_task]
+        guard_tasks = [check_topic_task, check_new_color_task, check_video_link_task]
         if self.state.get("image_url") and len(self.state.get("image_url").strip()) > 0:
             guard_tasks.append(check_input_image_task)
         guard_tasks.append(aggregate_checks_task)
 
         guard_crew = Crew(
-            agents=[topic_guard_agent],
+            agents=[input_guard_agent],
             tasks=guard_tasks,
             process=Process.sequential,
             verbose=True
@@ -824,9 +832,9 @@ class MarketResearchFlow(Flow):
             # Fire the explicit error straight to the React frontend
             self.update_queue.put({
                 "status": "error",
-                "message": "Your input is off-topic or invalid. Please check your inputs, and stick to the allowed domain."
+                #"message": "Your input is off-topic or invalid. Please check your inputs, and stick to the allowed domain."
+                "message": str(result)
             })
-
             return "HALT_FLOW"
             
         return str(result)
