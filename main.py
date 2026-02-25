@@ -464,6 +464,7 @@ writer = Agent(
 # -----------------------------
 # Quality assurance
 # -----------------------------
+'''
 editor = Agent(
     role="Content Editor",
     goal="Ensure content quality and consistency.",
@@ -476,7 +477,7 @@ editor = Agent(
     verbose=True,
     llm=llm
 )
-
+'''
 content_evaluator = Agent(
     role="Content Evaluator",
     goal="Evalue market analysis report from your Marketing team.",
@@ -688,7 +689,7 @@ writing_task = Task(
     context=[reddit_search_task, market_research_task],
     agent=writer
 )
-
+'''
 editing_task = Task(
     description="""Review and edit the report.
 
@@ -709,11 +710,7 @@ editing_task = Task(
     agent=editor,
     output_file=f"{OUTPUT_DIR}/final_report.md"
 )
-
-"""
-- When do people use them? Are there particular circumstances or occasions of use?
-- How does your competitor’s share of sentiment rankings stack up to yours?
-"""
+'''
 grading_task = Task(
     description="""Review the market analysis report {market_report_text} objectively.
     Generate a concise evaluation and overall score based on the following criteria.
