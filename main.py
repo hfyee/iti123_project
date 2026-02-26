@@ -771,9 +771,9 @@ check_topic_task = Task(
 
 check_new_color_task = Task(
     description="""Check if {new_color} is a valid color from this list: 
-    [white, black, red, blue, green, yellow, purple, orange, brown, pink, grey].
+    [white, black, red, blue, green, yellow, purple, orange, brown, pink, grey, gold].
     Return 'ALLOWED' or 'OFF_TOPIC (check color validity)'.""",
-    expected_output="ALLOWED or OFF_TOPIC (check color validity)",
+    expected_output="ALLOWED or OFF_TOPIC (choose a different color)",
     agent=input_guard_agent
 )
 
