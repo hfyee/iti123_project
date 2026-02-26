@@ -1,0 +1,489 @@
+"use client";
+
+import React, { useState } from "react";
+import { BACKEND_URL } from '../lib/api';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { 
+  Bike, 
+  Search, 
+  Youtube, 
+  Palette, 
+  Database, 
+  Loader2, 
+  AlertCircle,
+  FileText,
+  CheckCircle,
+  ShieldCheck
+} from "lucide-react";
+import { runFlow, getFileUrl, uploadFile, ResearchRequest, ApiResponse } from "@/lib/api";
+
+// --- Types & Config ---
+
+const TASKS = [
+  { id: "Market research", label: "Market Research", icon: Search },
+  { id: "Variant generation", label: "Variant Generation", icon: Palette },
+  { id: "Video transcription", label: "Video Analysis", icon: Youtube },
+  { id: "Specs data collection", label: "Specs Collection", icon: Database },
+];
+
+// --- Components ---
+
+const Sidebar = ({ currentTask, onSelect }: { currentTask: string, onSelect: (t: string) => void }) => (
+  <div className="w-64 bg-slate-900 text-white h-screen flex flex-col fixed left-0 top-0 border-r border-slate-800">
+    <div className="p-6 flex items-center gap-3 border-b border-slate-800">
+      <Bike className="w-8 h-8 text-blue-400" />
+      <h1 className="font-bold text-xl tracking-tight">BikeAI</h1>
+    </div>
+    <nav className="flex-1 p-4 space-y-2">
+      {TASKS.map((task) => (
+        <button
+          key={task.id}
+          onClick={() => onSelect(task.id)}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+            currentTask === task.id
+              ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
+              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+          }`}
+        >
+          <task.icon className="w-5 h-5" />
+          <span className="font-medium">{task.label}</span>
+        </button>
+      ))}
+    </nav>
+    <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
+      AI Research Assistant v1.0 © HF Yee
+    </div>
+  </div>
+);
+
+const InputField = ({ label, value, onChange, placeholder }: any) => (
+  <div className="space-y-1">
+    <label className="text-sm font-semibold text-slate-700">{label}</label>
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+      placeholder={placeholder}
+    />
+  </div>
+);
+
+// --- Main Page Component ---
+
+export default function Home() {
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+  const [evaluationContent, setEvaluationContent] = useState<string | null>(null);
+  const [task, setTask] = useState("Market research");
+  const [result, setResult] = useState<ApiResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Form State
+  const [product, setProduct] = useState("Tern folding bike");
+  const [topic, setTopic] = useState("Folding bicycles");
+  const [videoUrl, setVideoUrl] = useState("https://www.youtube.com/watch?v=lhDoB9rGbGQ");
+  const [imageUrl, setImageUrl] = useState("");
+  const [color, setColor] = useState("Matte Black");
+  const [models, setModels] = useState("Tern Vektron, BTWIN E-Fold 500, Brompton Electric C Line, Dahon Unio E20, Jimove MC Pro 2.0");
+
+  // NEW: State to hold the actual file object
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // NEW: State to hold the temporary preview URL
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // NEW: Generate and clean up the preview URL whenever the file changes
+  React.useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    // Create a temporary local URL for the image
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+
+    // Cleanup function to prevent memory leaks when the component unmounts or file changes
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [selectedFile]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setResult(null);
+    setMarkdownContent(null);
+    setEvaluationContent(null);
+    setErrorMessage(null)
+
+    try {
+      // 1. Upload the image FIRST if we are doing Variant Generation
+      let finalImagePath = "";
+      if (task === "Variant generation") {
+        if (!selectedFile) throw new Error("Please select an image first.");
+        finalImagePath = await uploadFile(selectedFile);
+      }
+
+      // 2. Construct the payload to match your FastAPI ResearchRequest model
+      const payload: ResearchRequest = {
+        query_type: task,
+        product: product,
+        models: models,
+        topic,
+        video_url: videoUrl,
+        //image_url: imageUrl,
+        // Use the newly uploaded path instead of the old text state
+        image_url: finalImagePath,
+        new_color: color,
+      };
+
+      // 3. Open the connection to the streaming endpoint
+      const response = await fetch(`${BACKEND_URL}/api/run-flow`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      if (!response.body) {
+        throw new Error("Streaming is not supported by the browser.");
+      }
+
+      // 4. Set up the stream reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      // Track what we've already fetched so we don't trigger infinite loops
+      let fetchedMainReport = false;
+      let fetchedEvalReport = false;
+      let buffer = "";
+
+      // 5. Read the incoming data chunks continuously
+      while (true) {
+        const { value, done } = await reader.read();
+        
+        if (done) {
+          setIsLoading(false);
+          break; // The backend closed the connection (Task fully complete)
+        }
+
+        // Decode the chunk and add it to our buffer
+        buffer += decoder.decode(value, { stream: true });
+        
+        // SSE chunks are separated by double newlines
+        const parts = buffer.split('\n\n');
+        
+        // Keep the last part in the buffer if it's incomplete
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          if (part.startsWith("data: ")) {
+            const jsonStr = part.replace("data: ", "");
+            
+            try {
+              const parsedData = JSON.parse(jsonStr);
+
+              // NEW: Catch the guardrail error!
+              if (parsedData.status === "error") {
+                setErrorMessage(parsedData.message);
+                //setIsLoading(false);
+                //return; // Use 'return' instead of 'break' to instantly kill the frontend execution!
+              }
+              
+              // Update the raw JSON viewer/Word Clouds
+              //setResult(parsedData);
+
+              // ✅ NEW: Accumulate files so they never disappear
+              setResult((prevResult: ApiResponse | null) => {
+                // If this is the very first chunk, just take it as-is
+                if (!prevResult) return parsedData;
+
+                // Safely grab both sets of files
+                const prevFiles = prevResult.data?.files || prevResult.data?.files_generated || [];
+                const newFiles = parsedData.data?.files || parsedData.data?.files_generated || [];
+
+                // Combine and deduplicate
+                const mergedFiles = Array.from(new Set([...prevFiles, ...newFiles]));
+
+                // Return the fresh chunk, but forcefully inject our accumulated files array
+                return {
+                  ...parsedData,
+                  data: {
+                    ...parsedData.data,
+                    files: mergedFiles, // Force the files key to exist with our merged data!
+                  }
+                };
+              });
+              
+              // 1. YOUR MERGED LOGIC: Safely grab whichever array the backend sent
+              const currentFiles = parsedData.data?.files || parsedData.data?.files_generated || [];
+
+              // 2. YOUR MERGED LOGIC (Updated): Find the main .md file, but explicitly ignore the evaluation file
+              const mainReportFile = currentFiles.find(
+                (f: string) => f.endsWith(".md") && !f.includes("evaluation")
+              );
+              
+              // 3. YOUR MERGED LOGIC: Fetch the text, but use our new flag so it only fetches once
+              if (mainReportFile && !fetchedMainReport) {
+                const mdRes = await fetch(getFileUrl(mainReportFile));
+                const text = await mdRes.text();
+                setMarkdownContent(text);
+                fetchedMainReport = true; // Lock it so it doesn't re-fetch on the next chunk
+              }
+
+              // ... (The rest of the evaluation file fetching logic stays exactly the same)
+              const evalFile = currentFiles.find(
+                (f: string) => f.includes("evaluation_summary.md")
+              );
+              
+              if (evalFile && !fetchedEvalReport) {
+                const evalRes = await fetch(getFileUrl(evalFile));
+                const text = await evalRes.text();
+                setEvaluationContent(text);
+                fetchedEvalReport = true;
+              }
+
+            } catch (err) {
+              console.error("Failed to parse JSON chunk:", err);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Workflow failed:", error);
+      setIsLoading(false);
+    }
+  };
+
+  // helper variable that looks for whichever array the backend decided to send
+  const fileList = result?.data?.files || result?.data?.files_generated || [];
+
+  return (
+    <div className="min-h-screen bg-slate-50 pl-64">
+      <Sidebar currentTask={task} onSelect={setTask} />
+
+      <main className="max-w-5xl mx-auto p-8">
+        <header className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">
+            {TASKS.find(t => t.id === task)?.label}
+          </h2>
+          <p className="text-slate-500">
+            Configure your parameters below to start the AI agent workflow.
+          </p>
+        </header>
+
+        {/* Input Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* CONDITIONAL INPUT: Show 'Models' for Specs task, 'Product' for others */}
+            {task === "Specs data collection" ? (
+              <InputField
+                label="Model Names (comma-separated)"
+                value={models}
+                onChange={setModels}
+                placeholder="e.g. Tern Vektron, Brompton C Line, Dahon K3"
+              />
+            ) : (
+              <InputField
+                label="Product Name"
+                value={product}
+                onChange={setProduct}
+                placeholder="e.g. Brompton folding bike"
+              />
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Topic Domain
+              </label>
+              <input
+                type="text"
+                value="Folding bicycles"
+                readOnly
+                className="w-full px-4 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed focus:outline-none focus:ring-0"
+              />
+            </div>
+
+            {task === "Video transcription" && (
+              <div className="md:col-span-2">
+                <InputField 
+                  label="YouTube URL" 
+                  value={videoUrl} 
+                  onChange={setVideoUrl} 
+                  placeholder="https://youtube.com/..." 
+                />
+              </div>
+            )}
+
+            {/* Image Variant Inputs (Only for Variant task) */}
+            {task === "Variant generation" && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">Upload Original Image</label>
+                  
+                  {/* Flex container to put input and thumbnail side-by-side */}
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all 
+                                 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 
+                                 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    
+                    {/* The Thumbnail Preview */}
+                    {previewUrl && (
+                      <div className="shrink-0 relative group">
+                        <img 
+                          src={previewUrl} 
+                          alt="Upload preview" 
+                          className="h-16 w-16 object-cover rounded-lg border border-slate-200 shadow-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>    
+
+                <InputField 
+                  label="Target Color" 
+                  value={color} 
+                  onChange={setColor} 
+                  placeholder="e.g. Gold, Neon Blue" 
+                />
+              </>
+            )}
+
+            <div className="md:col-span-2 pt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Run Workflow
+                    <CheckCircle className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3 text-red-700">
+            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+            <div>
+              <h4 className="font-semibold">Workflow Failed</h4>
+              <p className="text-sm">{error}</p>
+            </div>
+          </div>
+        )}
+
+{/* Results Display */}
+        {result && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+            {/* Guardrail Error Banner */}
+            {errorMessage && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-md animate-in fade-in duration-300">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      Workflow Halted
+                    </h3>
+                    <div className="mt-1 text-sm text-red-700">
+                      <p>{errorMessage}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* UPDATED: Added 'i' for case-insensitive and added webp */}
+            {fileList?.some((f: string) => f.match(/\.(png|jpg|jpeg|webp)$/i)) && (
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+                   <Palette className="w-5 h-5 text-purple-500" />
+                   <h3 className="font-semibold text-slate-800">Generated Variant</h3>
+                 </div>
+                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                   {fileList
+                     ?.filter((f: string) => f.match(/\.(png|jpg|jpeg|webp)$/i))
+                     .map((file: string, i: number) => (
+                       <div key={i} className="rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                         <img 
+                           src={getFileUrl(file)} 
+                           alt="Generated result" 
+                           className="w-full h-auto object-cover"
+                         />
+                       </div>
+                   ))}
+                 </div>
+               </div>
+            )}  
+            
+            {/* 2. Markdown Report - FIXED to check if files_generated exists */}
+            {markdownContent && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-500" />
+                  <h3 className="font-semibold text-slate-800">Analysis Report</h3>
+                </div>
+                <div className="p-8 prose prose-slate max-w-none prose-headings:font-bold prose-h1:text-2xl prose-h2:text-xl prose-a:text-blue-600">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {markdownContent}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Raw Data Fallback - FIXED to check safely */}
+            {!markdownContent && (!fileList || !fileList.some((f: string) => f.match(/\.(png|jpg|jpeg)$/))) && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <pre className="bg-slate-900 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm">
+                  {JSON.stringify(result, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {/* NEW: Evaluation Summary Panel */}
+            {evaluationContent && (
+              <div className="bg-slate-50 rounded-xl shadow-sm border border-indigo-100 overflow-hidden mt-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="px-6 py-4 border-b border-indigo-100 flex items-center gap-2 bg-indigo-50/50">
+                  {/* You can use a lucide-react icon like ClipboardCheck or ShieldCheck here */}
+                  <ShieldCheck className="w-5 h-5 text-indigo-500" />
+                  <h3 className="font-semibold text-indigo-900">
+                    AI Evaluation & Quality Assurance
+                  </h3>
+                </div>
+                <div className="p-6 prose prose-slate max-w-none prose-headings:text-indigo-900 prose-a:text-indigo-600">
+                  <ReactMarkdown>{evaluationContent}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
