@@ -221,6 +221,7 @@ class CheckYouTubeLinkTool(BaseTool):
         except Exception as e:
             return f"Error/Unavailable: {str(e)}"
 '''
+# Simplified version as YouTube tends to block request from bots and yt-dlp may not work reliably without proper cookies.
 class CheckYouTubeLinkTool(BaseTool):
     name: str = "YouTube Link Checker"
     description: str = "Checks if a YouTube video link is valid and accessible."
