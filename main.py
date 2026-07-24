@@ -67,7 +67,7 @@ from wordcloud import WordCloud
 
 # Load environment variables (Create a .env file with your keys)
 import gdown
-url = 'https://drive.google.com/file/d/17C0MsdQ0gN9bHML_dYOQQ1CUxzIdkF0q/view?usp=drive_link' # HF
+url = 'drive_link'
 output_path = '.env'
 gdown.download(url, output_path, quiet=False,fuzzy=True)
 load_dotenv()
